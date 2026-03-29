@@ -8,6 +8,10 @@ import {
   Box,
   Button,
   Divider,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Drawer,
   IconButton,
   MenuItem,
@@ -19,7 +23,7 @@ import {
 } from '@mui/material';
 import { DatePicker, TimePicker } from '@mui/x-date-pickers';
 import { Controller, useForm, useWatch, type Resolver } from 'react-hook-form';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import type { Dayjs } from 'dayjs';
 import { z } from 'zod';
 import type { EventInput } from '../../app/store/useTravelStore';
@@ -49,8 +53,8 @@ interface EventDrawerProps {
   canManage: boolean;
   onLoadHistory: (eventId: string) => Promise<void>;
   onClose: () => void;
-  onSave: (input: EventInput, eventId?: string) => void;
-  onDelete: (eventId: string) => void;
+  onSave: (input: EventInput, eventId?: string) => Promise<void> | void;
+  onDelete: (eventId: string) => Promise<void> | void;
 }
 
 const eventSchema = z
@@ -192,6 +196,8 @@ export const EventDrawer = ({
   const theme = useTheme();
   const [locationOptions, setLocationOptions] = useState<LocationSuggestion[]>([]);
   const [locationInput, setLocationInput] = useState('');
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const defaultValues = useMemo(() => buildDefaultValues(itinerary, event, draftRange), [draftRange, event, itinerary]);
 
   const {
@@ -212,6 +218,13 @@ export const EventDrawer = ({
     control,
     name: ['startDate', 'startTime', 'endDate', 'endTime'],
   });
+  const hasEventBeenUpdated = useMemo(() => {
+    if (!event) {
+      return false;
+    }
+
+    return event.updatedBy !== event.createdBy || event.updatedAt !== event.createdAt;
+  }, [event]);
   const conflictingEvents = useMemo(() => {
     const startDateTime = combineDateAndTime(startDateValue, startTimeValue);
     const endDateTime = combineDateAndTime(endDateValue, endTimeValue);
@@ -228,10 +241,17 @@ export const EventDrawer = ({
     });
   }, [endDateValue, endTimeValue, event?.id, existingEvents, startDateValue, startTimeValue]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     reset(defaultValues);
     setLocationInput(defaultValues.location);
   }, [defaultValues, reset]);
+
+  useEffect(() => {
+    if (!open) {
+      setConfirmDeleteOpen(false);
+      setIsDeleting(false);
+    }
+  }, [open]);
 
   useEffect(() => {
     if (!open || !event) {
@@ -259,86 +279,87 @@ export const EventDrawer = ({
   }, [locationInput, open]);
 
   return (
-    <Drawer
-      anchor="right"
-      onClose={onClose}
-      open={open}
-      PaperProps={{
-        sx: {
-          width: { xs: '100%', sm: 520 },
-          p: 3,
-          bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'light' ? 0.97 : 0.98),
-          color: theme.palette.text.primary,
-          borderLeft: `1px solid ${theme.palette.divider}`,
-          backgroundImage: 'none',
-        },
-      }}
-    >
-      <Stack spacing={2.5} sx={{ height: '100%' }}>
-        <Stack direction="row" justifyContent="space-between" spacing={2}>
-          <Box>
-            <Typography variant="h6">{event ? 'Edit travel event' : 'Create event'}</Typography>
-            <Typography color="text.secondary" variant="body2">
-              {itinerary.title} • {itinerary.destination}
-            </Typography>
-          </Box>
-          {event ? <EventCategoryChip category={event.category} /> : null}
-        </Stack>
+    <>
+      <Drawer
+        anchor="right"
+        onClose={onClose}
+        open={open}
+        PaperProps={{
+          sx: {
+            width: { xs: '100%', sm: 520 },
+            p: 3,
+            bgcolor: alpha(theme.palette.background.paper, theme.palette.mode === 'light' ? 0.97 : 0.98),
+            color: theme.palette.text.primary,
+            borderLeft: `1px solid ${theme.palette.divider}`,
+            backgroundImage: 'none',
+          },
+        }}
+      >
+        <Stack spacing={2.5} sx={{ height: '100%' }}>
+          <Stack direction="row" justifyContent="space-between" spacing={2}>
+            <Box>
+              <Typography variant="h6">{event ? 'Edit travel event' : 'Create event'}</Typography>
+              <Typography color="text.secondary" variant="body2">
+                {itinerary.title} • {itinerary.destination}
+              </Typography>
+            </Box>
+            {event ? <EventCategoryChip category={event.category} /> : null}
+          </Stack>
 
-        {!canManage ? (
-          <Alert severity="info">You can view this event, but only itinerary members can make changes.</Alert>
-        ) : null}
+          {!canManage ? (
+            <Alert severity="info">You can view this event, but only itinerary members can make changes.</Alert>
+          ) : null}
 
-        <Stack
-          component="form"
-          spacing={2.2}
-          sx={{ overflowY: 'auto', pr: 0.5 }}
-          onSubmit={handleSubmit((values) => {
-            const parsedValues = eventSchema.parse(values) as ParsedEventFormValues;
-            const startDateTime = combineDateAndTime(parsedValues.startDate, parsedValues.startTime);
-            const endDateTime = combineDateAndTime(parsedValues.endDate, parsedValues.endTime);
+          <Stack
+            component="form"
+            spacing={2.2}
+            sx={{ overflowY: 'auto', pr: 0.5 }}
+            onSubmit={handleSubmit(async (values) => {
+              const parsedValues = eventSchema.parse(values) as ParsedEventFormValues;
+              const startDateTime = combineDateAndTime(parsedValues.startDate, parsedValues.startTime);
+              const endDateTime = combineDateAndTime(parsedValues.endDate, parsedValues.endTime);
 
-            if (!startDateTime || !endDateTime) {
-              return;
-            }
+              if (!startDateTime || !endDateTime) {
+                return;
+              }
 
-            onSave(
-              {
-                title: parsedValues.title,
-                description: parsedValues.description,
-                category: parsedValues.category as EventCategory,
-                color: normalizeEventColor(parsedValues.color),
-                startDateTime: startDateTime.format(),
-                endDateTime: endDateTime.format(),
-                timezone: parsedValues.timezone,
-                location: parsedValues.location,
-                locationAddress: parsedValues.locationAddress,
-                locationLat: parsedValues.locationLat,
-                locationLng: parsedValues.locationLng,
-                cost: parsedValues.cost,
-              },
-              event?.id,
-            );
-          })}
-        >
-          <TextField
-            autoFocus={canManage}
-            disabled={!canManage}
-            error={Boolean(errors.title)}
-            helperText={errors.title?.message}
-            label="Title"
-            {...register('title')}
-          />
+              await onSave(
+                {
+                  title: parsedValues.title,
+                  description: parsedValues.description,
+                  category: parsedValues.category as EventCategory,
+                  color: normalizeEventColor(parsedValues.color),
+                  startDateTime: startDateTime.format(),
+                  endDateTime: endDateTime.format(),
+                  timezone: parsedValues.timezone,
+                  location: parsedValues.location,
+                  locationAddress: parsedValues.locationAddress,
+                  locationLat: parsedValues.locationLat,
+                  locationLng: parsedValues.locationLng,
+                  cost: parsedValues.cost,
+                },
+                event?.id,
+              );
+            })}
+          >
+            <TextField
+              autoFocus={canManage}
+              disabled={!canManage}
+              error={Boolean(errors.title)}
+              helperText={errors.title?.message}
+              label="Title"
+              {...register('title')}
+            />
 
-          <TextField
-            disabled={!canManage}
-            error={Boolean(errors.description)}
-            helperText={errors.description?.message}
-            label="Description"
-            minRows={3}
-            multiline
-            {...register('description')}
-          />
+            <TextField
+              disabled={!canManage}
+              error={Boolean(errors.description)}
+              helperText={errors.description?.message}
+              label="Description"
+              minRows={3}
+              multiline
+              {...register('description')}
+            />
 
           <Controller
             control={control}
@@ -529,7 +550,7 @@ export const EventDrawer = ({
             </Stack>
           </Stack>
 
-          {conflictingEvents.length > 0 ? (
+          {!isSubmitting && conflictingEvents.length > 0 ? (
             <Alert severity="warning">
               <Stack spacing={0.8}>
                 <Typography fontWeight={700} variant="body2">
@@ -686,20 +707,22 @@ export const EventDrawer = ({
                     </Typography>
                   </Box>
                 </Stack>
-                <Stack alignItems="center" direction="row" spacing={1.2}>
-                  <Avatar sx={{ width: 30, height: 30 }}>{usersMap[event.updatedBy]?.avatar ?? 'U'}</Avatar>
-                  <Box>
-                    <Stack alignItems="center" direction="row" spacing={0.8}>
-                      <CalendarClock size={14} />
-                      <Typography variant="body2">
-                        Last updated by {usersMap[event.updatedBy]?.name ?? 'Unknown'}
+                {hasEventBeenUpdated ? (
+                  <Stack alignItems="center" direction="row" spacing={1.2}>
+                    <Avatar sx={{ width: 30, height: 30 }}>{usersMap[event.updatedBy]?.avatar ?? 'U'}</Avatar>
+                    <Box>
+                      <Stack alignItems="center" direction="row" spacing={0.8}>
+                        <CalendarClock size={14} />
+                        <Typography variant="body2">
+                          Last updated by {usersMap[event.updatedBy]?.name ?? 'Unknown'}
+                        </Typography>
+                      </Stack>
+                      <Typography color="text.secondary" variant="caption">
+                        {formatDateTime(event.updatedAt)}
                       </Typography>
-                    </Stack>
-                    <Typography color="text.secondary" variant="caption">
-                      {formatDateTime(event.updatedAt)}
-                    </Typography>
-                  </Box>
-                </Stack>
+                    </Box>
+                  </Stack>
+                ) : null}
                 <Stack alignItems="center" direction="row" spacing={1.2}>
                   <MapPinned size={14} />
                   <Typography color="text.secondary" variant="body2">
@@ -736,23 +759,70 @@ export const EventDrawer = ({
 
           <Box sx={{ mt: 'auto' }} />
 
-          <Stack direction="row" justifyContent="space-between" pt={1}>
-            <Box>
-              {event && canManage ? (
-                <IconButton color="error" onClick={() => onDelete(event.id)}>
-                  <Trash2 size={18} />
-                </IconButton>
-              ) : null}
-            </Box>
-            <Stack direction="row" spacing={1.2}>
-              <Button onClick={onClose}>Cancel</Button>
-              <Button loading={isSubmitting} type="submit" variant="contained">
-                {event ? 'Save changes' : 'Create event'}
-              </Button>
+            <Stack direction="row" justifyContent="space-between" pt={1}>
+              <Box>
+                {event && canManage ? (
+                  <IconButton color="error" onClick={() => setConfirmDeleteOpen(true)}>
+                    <Trash2 size={18} />
+                  </IconButton>
+                ) : null}
+              </Box>
+              <Stack direction="row" spacing={1.2}>
+                <Button onClick={onClose}>Cancel</Button>
+                <Button loading={isSubmitting} type="submit" variant="contained">
+                  {event ? 'Save changes' : 'Create event'}
+                </Button>
+              </Stack>
             </Stack>
           </Stack>
         </Stack>
-      </Stack>
-    </Drawer>
+      </Drawer>
+
+      <Dialog
+        fullWidth
+        maxWidth="xs"
+        onClose={() => {
+          if (!isDeleting) {
+            setConfirmDeleteOpen(false);
+          }
+        }}
+        open={confirmDeleteOpen}
+      >
+        <DialogTitle>Delete event?</DialogTitle>
+        <DialogContent>
+          <Typography color="text.secondary" variant="body2">
+            {event
+              ? `This will permanently remove "${event.title}" from the itinerary and add a deleted entry to its audit history.`
+              : 'This event will be permanently removed from the itinerary.'}
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3 }}>
+          <Button disabled={isDeleting} onClick={() => setConfirmDeleteOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            color="error"
+            loading={isDeleting}
+            onClick={async () => {
+              if (!event) {
+                return;
+              }
+
+              setIsDeleting(true);
+
+              try {
+                await onDelete(event.id);
+              } finally {
+                setIsDeleting(false);
+                setConfirmDeleteOpen(false);
+              }
+            }}
+            variant="contained"
+          >
+            Delete event
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 };

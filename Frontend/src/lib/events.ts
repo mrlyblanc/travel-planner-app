@@ -54,9 +54,11 @@ export const eventColorPalette = Array.from(
 
 export const getEventColorOptions = (selectedColor?: string | null) => {
   const normalizedSelectedColor = normalizeEventColor(selectedColor);
-  const colors = normalizedSelectedColor ? [normalizedSelectedColor, ...eventColorPalette] : eventColorPalette;
+  if (!normalizedSelectedColor || eventColorPalette.includes(normalizedSelectedColor)) {
+    return eventColorPalette;
+  }
 
-  return Array.from(new Map(colors.map((color) => [normalizeEventColor(color), normalizeEventColor(color)])).values());
+  return [...eventColorPalette, normalizedSelectedColor];
 };
 
 export const getDefaultEventColor = (category: EventCategory) => normalizeEventColor(eventCategoryMeta[category].color);
