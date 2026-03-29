@@ -179,6 +179,20 @@ export const createAppTheme = (mode: ThemeMode) =>
           },
         },
       },
+      MuiOutlinedInput: {
+        styleOverrides: {
+          input: {
+            '&:-webkit-autofill, &:-webkit-autofill:hover, &:-webkit-autofill:focus, &:-webkit-autofill:active': {
+              WebkitTextFillColor: mode === 'light' ? '#18324d' : '#edf5ff',
+              caretColor: mode === 'light' ? '#18324d' : '#edf5ff',
+              WebkitBoxShadow: `0 0 0 100px ${mode === 'light' ? '#ffffff' : '#132131'} inset`,
+              boxShadow: `0 0 0 100px ${mode === 'light' ? '#ffffff' : '#132131'} inset`,
+              borderRadius: 'inherit',
+              transition: 'background-color 9999s ease-in-out 0s',
+            },
+          },
+        },
+      },
       MuiButton: {
         defaultProps: {
           disableElevation: true,
