@@ -50,7 +50,7 @@ public sealed class UtilityAndEdgeCaseTests
     {
         var userRepository = new FakeUserRepository();
         userRepository.Users.Add(TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com", "XX"));
-        var service = new UserService(userRepository, new FakePasswordHasher(), new FakeUnitOfWork());
+        var service = new UserService(new FakeCurrentUserAccessor(), userRepository, new FakePasswordHasher(), new FakeUnitOfWork());
 
         var response = await service.UpdateUserAsync("user-ava", "user-ava-v1", new UpdateUserRequest
         {

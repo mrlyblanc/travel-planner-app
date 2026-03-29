@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using TravelPlannerApp.Api.Common.Authorization;
+using TravelPlannerApp.Api.Endpoints.Requests;
 using TravelPlannerApp.Api.Extensions;
 using TravelPlannerApp.Application.Contracts.Users;
 using TravelPlannerApp.Application.Services;
@@ -14,12 +15,23 @@ public static class UserEndpoints
             .WithTags("Users")
             .RequireCurrentUser();
 
-        group.MapGet("/", async (IUserService service, CancellationToken cancellationToken) =>
-            Results.Ok(await service.GetUsersAsync(cancellationToken)))
-            .WithSummary("List users");
+        group.MapGet("/", async (SearchUsersQuery request, IUserService service, CancellationToken cancellationToken) =>
+            Results.Ok(await service.SearchUsersAsync(new SearchUsersRequest
+            {
+                Query = request.Query,
+                Limit = request.Limit
+            }, cancellationToken)))
+            .Validate<SearchUsersQuery>()
+            .WithSummary("Search users");
 
-        group.MapGet("/{userId}", async (string userId, IUserService service, HttpContext httpContext, CancellationToken cancellationToken) =>
+        group.MapGet("/{userId}", async Task<IResult> (string userId, IUserService service, IAuthorizationService authorizationService, HttpContext httpContext, CancellationToken cancellationToken) =>
         {
+            var authorizationResult = await authorizationService.AuthorizeAsync(httpContext.User, userId, AuthorizationPolicies.ResourceOwner);
+            if (!authorizationResult.Succeeded)
+            {
+                return Results.Forbid();
+            }
+
             var response = await service.GetUserByIdAsync(userId, cancellationToken);
             httpContext.Response.SetETag(response.Version);
             return TypedResults.Ok(response);

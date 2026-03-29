@@ -14,6 +14,11 @@ public static class ResponseMappings
         return new UserResponse(user.Id, user.ConcurrencyToken, user.Name, user.Email, user.Avatar, user.CreatedAtUtc);
     }
 
+    public static UserLookupResponse ToLookupResponse(this User user)
+    {
+        return new UserLookupResponse(user.Id, user.Name, user.Email, user.Avatar);
+    }
+
     public static ItineraryResponse ToResponse(this Itinerary itinerary)
     {
         return new ItineraryResponse(

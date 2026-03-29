@@ -1,3 +1,4 @@
+using TravelPlannerApp.Application.Abstractions.CurrentUser;
 using TravelPlannerApp.Application.Abstractions.Persistence;
 using TravelPlannerApp.Application.Abstractions.Security;
 using TravelPlannerApp.Application.Common.Exceptions;
@@ -10,24 +11,49 @@ namespace TravelPlannerApp.Application.Services;
 
 public sealed class UserService : IUserService
 {
+    private readonly ICurrentUserAccessor _currentUserAccessor;
     private readonly IUserRepository _userRepository;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IUnitOfWork _unitOfWork;
 
-    public UserService(IUserRepository userRepository, IPasswordHasher passwordHasher, IUnitOfWork unitOfWork)
+    public UserService(
+        ICurrentUserAccessor currentUserAccessor,
+        IUserRepository userRepository,
+        IPasswordHasher passwordHasher,
+        IUnitOfWork unitOfWork)
     {
+        _currentUserAccessor = currentUserAccessor;
         _userRepository = userRepository;
         _passwordHasher = passwordHasher;
         _unitOfWork = unitOfWork;
     }
 
-    public async Task<IReadOnlyList<UserResponse>> GetUsersAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<UserLookupResponse>> SearchUsersAsync(SearchUsersRequest request, CancellationToken cancellationToken = default)
     {
-        var users = await _userRepository.ListAsync(cancellationToken);
+        var currentUserId = _currentUserAccessor.GetCurrentUserId();
+        if (string.IsNullOrWhiteSpace(currentUserId))
+        {
+            throw new UnauthorizedException("Authenticated user is required.");
+        }
+
+        var currentUser = await _userRepository.GetByIdAsync(currentUserId.Trim(), cancellationToken);
+        if (currentUser is null)
+        {
+            throw new UnauthorizedException($"Current user '{currentUserId}' was not found.");
+        }
+
+        var query = request.Query.Trim();
+        if (query.Length < 2)
+        {
+            throw new BadRequestException("Query must be at least 2 characters.");
+        }
+
+        var limit = Math.Clamp(request.Limit, 1, 25);
+        var users = await _userRepository.SearchAsync(query, currentUser.Id, limit, cancellationToken);
         return users
             .OrderBy(static user => user.Name, StringComparer.OrdinalIgnoreCase)
             .ThenBy(static user => user.Id, StringComparer.OrdinalIgnoreCase)
-            .Select(static user => user.ToResponse())
+            .Select(static user => user.ToLookupResponse())
             .ToList();
     }
 

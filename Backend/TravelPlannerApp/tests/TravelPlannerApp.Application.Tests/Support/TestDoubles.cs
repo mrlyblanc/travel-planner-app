@@ -69,6 +69,21 @@ internal sealed class FakeUserRepository : IUserRepository
         return Task.FromResult(Users.ToList());
     }
 
+    public Task<List<User>> SearchAsync(string query, string excludedUserId, int limit, CancellationToken cancellationToken = default)
+    {
+        var normalizedQuery = query.Trim();
+        return Task.FromResult(
+            Users
+                .Where(user => !string.Equals(user.Id, excludedUserId, StringComparison.OrdinalIgnoreCase))
+                .Where(user =>
+                    user.Name.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase) ||
+                    user.Email.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(user => user.Name, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(user => user.Id, StringComparer.OrdinalIgnoreCase)
+                .Take(limit)
+                .ToList());
+    }
+
     public Task<List<User>> ListByIdsAsync(IEnumerable<string> userIds, CancellationToken cancellationToken = default)
     {
         var ids = userIds.ToHashSet(StringComparer.OrdinalIgnoreCase);

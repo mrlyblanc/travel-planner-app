@@ -16,6 +16,7 @@ public sealed class MinimalApiEndpointsTests
     private const string AvaEmail = "ava.santos@globejet.com";
     private const string LucaEmail = "luca.reyes@globejet.com";
     private const string MinaEmail = "mina.park@globejet.com";
+    private const string NoahEmail = "noah.tan@globejet.com";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -28,7 +29,7 @@ public sealed class MinimalApiEndpointsTests
         using var factory = new TravelPlannerApiFactory();
         using var client = factory.CreateApiClient();
 
-        var response = await client.GetAsync("/api/users");
+        var response = await client.GetAsync("/api/users?query=av");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
@@ -80,17 +81,21 @@ public sealed class MinimalApiEndpointsTests
     }
 
     [Fact]
-    public async Task GetUsers_WithExplicitApiVersionHeader_ReturnsUsersAndSupportedVersionHeader()
+    public async Task SearchUsers_WithExplicitApiVersionHeader_ReturnsMatchesAndSupportedVersionHeader()
     {
         using var factory = new TravelPlannerApiFactory();
         using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
         client.DefaultRequestHeaders.Add("X-Api-Version", "1.0");
 
-        var response = await client.GetAsync("/api/users");
+        var response = await client.GetAsync("/api/users?query=lu");
 
         response.EnsureSuccessStatusCode();
         Assert.True(response.Headers.TryGetValues("api-supported-versions", out var values));
         Assert.Contains("1.0", values!.Single());
+        var payload = await response.Content.ReadFromJsonAsync<List<UserLookupResponse>>(JsonOptions);
+        Assert.NotNull(payload);
+        Assert.Contains(payload!, user => user.Id == "user-luca");
+        Assert.DoesNotContain(payload!, user => user.Id == "user-ava");
     }
 
     [Fact]
@@ -116,16 +121,30 @@ public sealed class MinimalApiEndpointsTests
         using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
         client.DefaultRequestHeaders.Add("X-Api-Version", "2.0");
 
+        var response = await client.GetAsync("/api/users?query=lu");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task SearchUsers_WithoutQuery_ReturnsValidationProblem()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
+
         var response = await client.GetAsync("/api/users");
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var payload = await response.Content.ReadFromJsonAsync<ValidationProblemResponse>(JsonOptions);
+        Assert.NotNull(payload);
+        Assert.Contains("Query", payload!.Errors.Keys, StringComparer.OrdinalIgnoreCase);
     }
 
     [Fact]
     public async Task GetItineraryById_WhenUserIsNotMember_ReturnsForbiddenProblem()
     {
         using var factory = new TravelPlannerApiFactory();
-        using var client = await factory.CreateAuthenticatedClientAsync(MinaEmail);
+        using var client = await factory.CreateAuthenticatedClientAsync(NoahEmail);
 
         var response = await client.GetAsync("/api/itineraries/itinerary-singapore");
 
@@ -417,6 +436,31 @@ public sealed class MinimalApiEndpointsTests
     }
 
     [Fact]
+    public async Task GetEventById_WhenUserIsMemberButNotOwner_ReturnsEvent()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync(LucaEmail);
+
+        var response = await client.GetAsync("/api/events/evt-tokyo-1");
+
+        response.EnsureSuccessStatusCode();
+        var payload = await response.Content.ReadFromJsonAsync<EventResponse>(JsonOptions);
+        Assert.NotNull(payload);
+        Assert.Equal("evt-tokyo-1", payload!.Id);
+    }
+
+    [Fact]
+    public async Task GetEventHistory_WhenUserIsNotMember_ReturnsForbiddenProblem()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync(NoahEmail);
+
+        var response = await client.GetAsync("/api/events/evt-tokyo-1/history");
+
+        await AssertProblemAsync(response, HttpStatusCode.Forbidden, "Forbidden");
+    }
+
+    [Fact]
     public async Task CreateUser_WithExistingEmail_ReturnsConflictProblem()
     {
         using var factory = new TravelPlannerApiFactory();
@@ -453,18 +497,43 @@ public sealed class MinimalApiEndpointsTests
     }
 
     [Fact]
+    public async Task GetUser_WhenTargetingOwnProfile_ReturnsUser()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
+
+        var response = await client.GetAsync("/api/users/user-ava");
+
+        response.EnsureSuccessStatusCode();
+        Assert.True(response.Headers.ETag is not null);
+        var user = await response.Content.ReadFromJsonAsync<UserResponse>(JsonOptions);
+        Assert.NotNull(user);
+        Assert.Equal("user-ava", user!.Id);
+    }
+
+    [Fact]
+    public async Task GetUser_WhenTargetingAnotherProfile_ReturnsForbidden()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync(LucaEmail);
+
+        var response = await client.GetAsync("/api/users/user-ava");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task UpdateUser_WhenTargetingAnotherProfile_ReturnsForbidden()
     {
         using var factory = new TravelPlannerApiFactory();
         using var client = await factory.CreateAuthenticatedClientAsync(LucaEmail);
-        var staleEtag = await GetEtagAsync(client, "/api/users/user-ava");
 
         var response = await client.SendAsync(CreateIfMatchRequest(HttpMethod.Put, "/api/users/user-ava", new UpdateUserRequest
         {
             Name = "Blocked",
             Email = AvaEmail,
             Avatar = "AS"
-        }, staleEtag));
+        }, "\"blocked-version\""));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }

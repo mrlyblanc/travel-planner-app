@@ -20,6 +20,23 @@ public sealed class UserRepository : IUserRepository
             .ToListAsync(cancellationToken);
     }
 
+    public Task<List<User>> SearchAsync(string query, string excludedUserId, int limit, CancellationToken cancellationToken = default)
+    {
+        var normalizedQuery = query.Trim().ToLowerInvariant();
+        var normalizedExcludedUserId = excludedUserId.Trim();
+
+        return _dbContext.Users
+            .AsNoTracking()
+            .Where(user => user.Id != normalizedExcludedUserId)
+            .Where(user =>
+                user.Name.ToLower().Contains(normalizedQuery) ||
+                user.Email.ToLower().Contains(normalizedQuery))
+            .OrderBy(user => user.Name)
+            .ThenBy(user => user.Id)
+            .Take(limit)
+            .ToListAsync(cancellationToken);
+    }
+
     public Task<List<User>> ListByIdsAsync(IEnumerable<string> userIds, CancellationToken cancellationToken = default)
     {
         var ids = userIds.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
