@@ -1,0 +1,15 @@
+<Project>
+
+  <PropertyGroup Condition="$([System.String]::Copy('$(MSBuildProjectName)').EndsWith('Tests'))">
+    <CollectCoverage>true</CollectCoverage>
+    <CoverletOutput>$(MSBuildProjectDirectory)\TestResults\Coverage\</CoverletOutput>
+    <CoverletOutputFormat>cobertura</CoverletOutputFormat>
+    <Threshold>80,45</Threshold>
+    <ThresholdType>line,branch</ThresholdType>
+    <ThresholdStat>total</ThresholdStat>
+    <Include>[TravelPlannerApp.Api]*,[TravelPlannerApp.Application]*,[TravelPlannerApp.Domain]*,[TravelPlannerApp.Infrastructure]*</Include>
+    <Exclude>[*.Tests]*,[xunit*]*,[testhost*]*</Exclude>
+    <ExcludeByFile>**/Migrations/*.cs</ExcludeByFile>
+  </PropertyGroup>
+
+</Project>
