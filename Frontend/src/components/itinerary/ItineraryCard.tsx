@@ -9,12 +9,12 @@ import { UserAvatarGroup } from '../user/UserAvatarGroup';
 
 interface ItineraryCardProps {
   itinerary: Itinerary;
-  members: User[];
+  collaborators: User[];
   eventCount: number;
   totalCost: number;
 }
 
-export const ItineraryCard = ({ itinerary, members, eventCount, totalCost }: ItineraryCardProps) => (
+export const ItineraryCard = ({ itinerary, collaborators, eventCount, totalCost }: ItineraryCardProps) => (
   <Card sx={{ height: '100%' }}>
     <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.2, height: '100%' }}>
       <Stack direction="row" justifyContent="space-between" spacing={2}>
@@ -23,7 +23,7 @@ export const ItineraryCard = ({ itinerary, members, eventCount, totalCost }: Iti
           label={itinerary.destination}
           sx={{ bgcolor: 'rgba(43, 110, 220, 0.08)', color: 'primary.dark' }}
         />
-        <UserAvatarGroup max={4} size={32} users={members} />
+        {collaborators.length > 0 ? <UserAvatarGroup max={4} size={32} users={collaborators} /> : null}
       </Stack>
 
       <Stack spacing={1}>
@@ -47,7 +47,9 @@ export const ItineraryCard = ({ itinerary, members, eventCount, totalCost }: Iti
 
       <Stack direction="row" justifyContent="space-between" mt="auto" pt={1}>
         <Typography color="text.secondary" variant="body2">
-          Shared with {members.length} travelers
+          {collaborators.length === 0
+            ? 'Just you for now'
+            : `Shared with ${collaborators.length} traveler${collaborators.length === 1 ? '' : 's'}`}
         </Typography>
         <Button component={RouterLink} endIcon={<ArrowRight size={16} />} to={`/itineraries/${itinerary.id}`}>
           Open trip

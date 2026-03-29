@@ -78,20 +78,20 @@ export const LoginPage = () => {
       alternateActionTo="/register"
       alternatePrompt="Need a new account?"
       eyebrow="Sign in"
-      subtitle="Use your backend-backed account to access shared itineraries, events, and collaboration history."
+      subtitle="Sign in to review upcoming trips, update shared plans, and keep every booking, stop, and schedule change in one place."
       supplemental={hasSeededDevLogin ? (
         <DemoCard elevation={0}>
           <Stack direction="row" justifyContent="space-between" spacing={2}>
             <Box>
               <Typography fontWeight={700} variant="body1">
-                Seeded demo account
+                Quick start account
               </Typography>
               <Typography color="text.secondary" mt={0.5} variant="body2">
-                Use the backend seed user if you just want to explore the app locally.
+                Jump straight into the shared itineraries with a ready-to-use traveler account for local development.
               </Typography>
             </Box>
             <Button onClick={handleFillDemoAccount} variant="outlined">
-              Use seeded account
+              Fill account
             </Button>
           </Stack>
 
@@ -142,7 +142,7 @@ export const LoginPage = () => {
       <Stack alignItems="center" direction="row" mt={2.5} spacing={1}>
         <KeyRound size={16} />
         <Typography color="text.secondary" variant="caption">
-          Authentication is handled by the backend JWT endpoints documented in the API README and Swagger.
+          Your account unlocks shared itineraries, real-time trip updates, and a full event activity trail for every stop on the calendar.
         </Typography>
       </Stack>
     </AuthShell>

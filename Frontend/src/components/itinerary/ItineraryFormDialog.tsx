@@ -69,22 +69,25 @@ export const ItineraryFormDialog = ({
           <TextField
             autoFocus
             error={Boolean(errors.title)}
-            helperText={errors.title?.message}
+            helperText={errors.title?.message ?? 'Give the itinerary a name your collaborators will recognize right away.'}
             label="Title"
+            placeholder="Tokyo cherry blossom week"
             {...register('title')}
           />
           <TextField
             error={Boolean(errors.destination)}
-            helperText={errors.destination?.message}
+            helperText={errors.destination?.message ?? 'Use a city, country, region, or route for the trip.'}
             label="Destination"
+            placeholder="Tokyo, Japan"
             {...register('destination')}
           />
           <TextField
             error={Boolean(errors.description)}
-            helperText={errors.description?.message}
+            helperText={errors.description?.message ?? 'Summarize the purpose, pace, and priorities so everyone stays aligned.'}
             label="Description"
             minRows={3}
             multiline
+            placeholder="Plan the key stays, transport legs, meals, and must-do moments for this trip."
             {...register('description')}
           />
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>

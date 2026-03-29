@@ -54,7 +54,7 @@ export const EventListPanel = ({ events, usersMap, selectedEventId, onSelectEven
           <TextField
             fullWidth
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search events or places"
+            placeholder="Search by event title, hotel, restaurant, landmark, or neighborhood"
             size="small"
             slotProps={{
               input: {
@@ -70,7 +70,7 @@ export const EventListPanel = ({ events, usersMap, selectedEventId, onSelectEven
 
           {filteredEvents.length === 0 ? (
             <EmptyState
-              description="Try a different keyword or create a new trip event from the toolbar."
+              description="Search by stop name, venue, hotel, airport, or neighborhood, or add a new event from the itinerary toolbar."
               icon={<Search size={28} />}
               title="No matching events"
             />

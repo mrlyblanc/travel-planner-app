@@ -18,6 +18,7 @@ export const ItineraryListPage = () => {
   const rawItineraries = useTravelStore((state) => state.itineraries);
   const users = useTravelStore((state) => state.users);
   const events = useTravelStore((state) => state.events);
+  const currentUserId = useTravelStore((state) => state.currentUserId);
   const createItinerary = useTravelStore((state) => state.createItinerary);
   const refreshAll = useTravelStore((state) => state.refreshAll);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -44,8 +45,8 @@ export const ItineraryListPage = () => {
           <Box maxWidth={720}>
             <Typography variant="h3">Plan travel like a shared calendar.</Typography>
             <HeroSupportingCopy mt={1.5}>
-              Real backend data, seeded itineraries, and a Google Calendar-inspired workflow for collaborative trip
-              planning. The same polished UI now syncs with the ASP.NET API in real time.
+              Keep flights, hotels, meals, and day plans in one shared calendar so everyone can see what is happening,
+              where to be, and what the trip is expected to cost.
             </HeroSupportingCopy>
             {nextTrip ? (
               <HeroNextTrip mt={2.5} variant="body2">
@@ -71,34 +72,37 @@ export const ItineraryListPage = () => {
 
       <Grid container spacing={2.5}>
         <Grid size={{ xs: 12, md: 4 }}>
-          <StatCard helper="Seeded across five destinations" icon={<Route size={20} />} label="Trips" value={String(itineraries.length)} />
+          <StatCard helper="Active itineraries across your travel workspace" icon={<Route size={20} />} label="Trips" value={String(itineraries.length)} />
         </Grid>
         <Grid size={{ xs: 12, md: 4 }}>
-          <StatCard helper="Simulated collaborators available" icon={<Users2 size={20} />} label="Travelers" value={String(users.length)} />
+          <StatCard helper="People available to join and collaborate on trips" icon={<Users2 size={20} />} label="Travelers" value={String(users.length)} />
         </Grid>
         <Grid size={{ xs: 12, md: 4 }}>
-          <StatCard helper="Combined sample itinerary spend" icon={<Coins size={20} />} label="Total planned cost" value={currencyFormatter.format(totalCost)} />
+          <StatCard helper="Combined planned spend across all itineraries" icon={<Coins size={20} />} label="Total planned cost" value={currencyFormatter.format(totalCost)} />
         </Grid>
       </Grid>
 
       <Box>
         <Typography variant="h5">Your itineraries</Typography>
         <Typography color="text.secondary" mt={0.8}>
-          Each card shows members, date range, total cost, and event density so you can jump straight into planning.
+          Each card shows collaborators, date range, total cost, and event density so you can jump straight into planning.
         </Typography>
       </Box>
 
       <Grid container spacing={2.5}>
         {itineraries.map((itinerary) => {
           const itineraryEvents = events.filter((event) => event.itineraryId === itinerary.id);
-          const members = itinerary.memberIds.map((memberId) => usersMap[memberId]).filter(Boolean);
+          const collaborators = itinerary.memberIds
+            .filter((memberId) => memberId !== currentUserId)
+            .map((memberId) => usersMap[memberId])
+            .filter(Boolean);
 
           return (
             <Grid key={itinerary.id} size={{ xs: 12, md: 6, xl: 4 }}>
               <ItineraryCard
+                collaborators={collaborators}
                 eventCount={itineraryEvents.length}
                 itinerary={itinerary}
-                members={members}
                 totalCost={getTotalCost(itineraryEvents)}
               />
             </Grid>

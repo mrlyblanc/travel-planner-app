@@ -83,6 +83,7 @@ export const ItineraryDetailsPage = () => {
   const canManage = itinerary.memberIds.includes(currentUserId);
   const selectedEvent = selectedEventId ? events.find((event) => event.id === selectedEventId) ?? null : null;
   const members = itinerary.memberIds.map((memberId) => usersMap[memberId]).filter(Boolean);
+  const collaborators = members.filter((member) => member.id !== currentUserId);
   const selectedEventHistory = selectedEvent ? eventHistory[selectedEvent.id] ?? [] : [];
   const latestEventActivityLabel = useMemo(() => {
     const activityTimestamps = [
@@ -202,7 +203,13 @@ export const ItineraryDetailsPage = () => {
                     Collaborators
                   </Typography>
                 </Stack>
-                <UserAvatarGroup max={5} users={members} />
+                {collaborators.length > 0 ? (
+                  <UserAvatarGroup max={5} users={collaborators} />
+                ) : (
+                  <Typography color="text.secondary" variant="body2">
+                    Just you on this itinerary for now
+                  </Typography>
+                )}
               </Stack>
 
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
@@ -214,7 +221,7 @@ export const ItineraryDetailsPage = () => {
 
             {!canManage ? (
               <Alert severity="info">
-                This itinerary is read-only for the current mock user until they are added as a member.
+                This itinerary is view-only for your account until the trip owner adds you as a collaborator.
               </Alert>
             ) : null}
           </Stack>

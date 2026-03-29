@@ -366,18 +366,20 @@ export const EventDrawer = ({
               autoFocus={canManage}
               disabled={!canManage}
               error={Boolean(errors.title)}
-              helperText={errors.title?.message}
+              helperText={errors.title?.message ?? 'Name the stop clearly, like an airport transfer, check-in, or dinner reservation.'}
               label="Title"
+              placeholder="Dinner at Shibuya Yokocho"
               {...register('title')}
             />
 
             <TextField
               disabled={!canManage}
               error={Boolean(errors.description)}
-              helperText={errors.description?.message}
+              helperText={errors.description?.message ?? 'Add reservation notes, meeting details, transport context, or anything the group should know.'}
               label="Description"
               minRows={3}
               multiline
+              placeholder="Meet in the hotel lobby at 6:15 PM, confirm reservation under Ava Santos, and keep 15 minutes for the train ride."
               {...register('description')}
             />
 
@@ -388,7 +390,7 @@ export const EventDrawer = ({
               <TextField
                 disabled={!canManage}
                 error={Boolean(errors.category)}
-                helperText={errors.category?.message}
+                helperText={errors.category?.message ?? 'Choose the stop type so the calendar and trip cost summary stay organized.'}
                 label="Category"
                 onChange={field.onChange}
                 select
@@ -601,7 +603,7 @@ export const EventDrawer = ({
               <TextField
                 disabled={!canManage}
                 error={Boolean(errors.timezone)}
-                helperText={errors.timezone?.message}
+                helperText={errors.timezone?.message ?? 'Store the event in the local timezone for the destination, city, or airport.'}
                 label="Timezone"
                 onChange={field.onChange}
                 select
@@ -685,11 +687,12 @@ export const EventDrawer = ({
                   <TextField
                     {...params}
                     error={Boolean(errors.location)}
+                    placeholder="Search for a hotel, airport, restaurant, landmark, or neighborhood"
                     helperText={
                       errors.location?.message ??
                       (isGeoapifyConfigured
-                        ? 'Search Geoapify places and pick a result to fill the matched address.'
-                        : 'Using demo place search until VITE_GEOAPIFY_API_KEY is configured.')
+                        ? 'Find the exact stop and select a result to fill the address automatically.'
+                        : 'Search real places when Geoapify is configured, or use the built-in trip locations for local development.')
                     }
                     label="Location"
                   />
@@ -709,7 +712,14 @@ export const EventDrawer = ({
             )}
           />
 
-          <TextField disabled={!canManage} label="Matched address" value={locationAddress} {...register('locationAddress')} />
+          <TextField
+            disabled={!canManage}
+            helperText="Filled automatically from the place you selected above."
+            label="Matched address"
+            placeholder="Selected address details will appear here"
+            value={locationAddress}
+            {...register('locationAddress')}
+          />
 
           <Controller
             control={control}
@@ -718,7 +728,7 @@ export const EventDrawer = ({
               <TextField
                 disabled={!canManage}
                 error={Boolean(errors.cost)}
-                helperText={errors.cost?.message}
+                helperText={errors.cost?.message ?? 'Optional budget estimate for this stop, booking, or activity.'}
                 inputProps={{ min: 0, step: '0.01' }}
                 label="Cost (USD)"
                 onChange={field.onChange}
@@ -737,6 +747,7 @@ export const EventDrawer = ({
 
                   field.onChange(roundCurrency(parsedValue).toFixed(2));
                 }}
+                placeholder="0.00"
                 type="number"
                 value={field.value}
               />

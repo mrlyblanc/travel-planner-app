@@ -92,7 +92,14 @@ export const ShareItineraryDialog = ({
               });
             }}
             options={searchResults}
-            renderInput={(params) => <TextField {...params} label="Add travelers" placeholder="Search travelers" />}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                helperText="Invite people who should help plan, update, and keep this trip on schedule."
+                label="Add travelers"
+                placeholder="Search teammates by name or email"
+              />
+            )}
             renderOption={(props, option) => (
               <Box component="li" {...props}>
                 <Stack alignItems="center" direction="row" spacing={1.2}>
@@ -112,7 +119,7 @@ export const ShareItineraryDialog = ({
           <Stack direction="row" spacing={1.2}>
             <UserPlus size={18} />
             <Typography color="text.secondary" variant="body2">
-              Added members can create, edit, and reschedule events in this itinerary.
+              Added members can build the itinerary together by creating, editing, and rescheduling trip events.
             </Typography>
           </Stack>
         </Stack>

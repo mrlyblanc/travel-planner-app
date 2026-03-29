@@ -17,23 +17,23 @@ interface AuthShellProps extends PropsWithChildren {
 const featureHighlights = [
   {
     icon: <BadgeCheck size={18} />,
-    label: 'JWT sessions',
-    description: 'Sign in with real backend-issued access and refresh tokens.',
+    label: 'Secure access',
+    description: 'Pick up your itineraries with a protected account built for shared travel planning.',
   },
   {
     icon: <Radio size={18} />,
-    label: 'SignalR updates',
-    description: 'See trip changes flow into the shared calendar in real time.',
+    label: 'Live trip updates',
+    description: 'Watch the calendar stay current as flights, stays, and plans change.',
   },
   {
     icon: <History size={18} />,
-    label: 'Audit history',
-    description: 'Keep event edits traceable with clear collaboration metadata.',
+    label: 'Clear activity history',
+    description: 'See who changed reservations, timings, and day plans across the itinerary.',
   },
   {
     icon: <Users2 size={18} />,
-    label: 'Shared members',
-    description: 'Collaborate on the same itinerary with the backend enforcing access.',
+    label: 'Shared planning',
+    description: 'Coordinate destinations, bookings, and daily stops with the rest of the group.',
   },
 ];
 
@@ -58,29 +58,29 @@ export const AuthShell = ({
             <Box>
               <Typography variant="h6">Trip Board</Typography>
               <Typography color="rgba(255,255,255,0.72)" variant="body2">
-                Backend-connected itinerary planning
+                Shared travel itineraries
               </Typography>
             </Box>
           </BrandRow>
 
           <Box>
             <Typography color="rgba(255,255,255,0.72)" variant="overline">
-              Account access
+              Travel planning workspace
             </Typography>
             <Typography mt={1.2} variant="h3">
-              Shared travel planning, now with real accounts.
+              Organize every trip in one shared timeline.
             </Typography>
             <Typography color="rgba(255,255,255,0.84)" mt={1.8} variant="body1">
-              Sign in to collaborate on itineraries, create events, review audit history, and stay in sync with the
-              ASP.NET backend in real time.
+              Sign in to map out stays, transport, meals, and key moments together so everyone knows what is booked,
+              when plans change, and what comes next.
             </Typography>
           </Box>
 
           <Stack direction="row" flexWrap="wrap" gap={1}>
-            <Chip label="JWT auth" />
-            <Chip label="SignalR sync" />
+            <Chip label="Shared calendars" />
+            <Chip label="Live updates" />
             <Chip label="Shared itineraries" />
-            <Chip label="Audit trail" />
+            <Chip label="Activity history" />
           </Stack>
 
           <FeatureGrid>
