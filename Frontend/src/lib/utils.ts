@@ -8,10 +8,13 @@ export const uid = (prefix: string) =>
 export const currencyFormatter = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
-  maximumFractionDigits: 0,
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 });
 
 export const clampNumber = (value: number, min = 0) => Math.max(min, value);
+
+export const roundCurrency = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
 
 export const initialsFromName = (value: string) =>
   value

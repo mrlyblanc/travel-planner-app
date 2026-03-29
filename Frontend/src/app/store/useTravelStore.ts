@@ -17,6 +17,12 @@ export interface RegisterInput {
   avatar?: string;
 }
 
+export interface ChangePasswordInput {
+  currentPassword: string;
+  newPassword: string;
+  confirmNewPassword: string;
+}
+
 interface TravelState {
   users: User[];
   itineraries: Itinerary[];
@@ -33,6 +39,7 @@ interface TravelState {
   bootstrap: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
+  changePassword: (input: ChangePasswordInput) => Promise<void>;
   logout: () => Promise<void>;
   refreshAll: () => Promise<void>;
   refreshItineraryBundle: (itineraryId: string) => Promise<void>;
@@ -289,6 +296,24 @@ export const useTravelStore = create<TravelState>((set, get) => ({
         isReady: true,
         error: message,
       });
+      throw error;
+    }
+  },
+
+  changePassword: async (input) => {
+    const session = await requireSession();
+
+    try {
+      await travelApi.changePassword(session.accessToken, input);
+
+      set({
+        accessToken: session.accessToken,
+        refreshToken: session.refreshToken,
+        error: null,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to change password.';
+      set({ error: message });
       throw error;
     }
   },

@@ -11,8 +11,8 @@ const FALLBACK_API_BASE_URLS = [
   'http://localhost:5070',
   'https://localhost:7291',
 ];
-const DEFAULT_LOGIN_EMAIL = import.meta.env.VITE_DEV_LOGIN_EMAIL ?? 'ava.santos@globejet.com';
-const DEFAULT_LOGIN_PASSWORD = import.meta.env.VITE_DEV_LOGIN_PASSWORD ?? 'Travel123!';
+const DEFAULT_LOGIN_EMAIL = import.meta.env.VITE_DEV_LOGIN_EMAIL?.trim() ?? '';
+const DEFAULT_LOGIN_PASSWORD = import.meta.env.VITE_DEV_LOGIN_PASSWORD ?? '';
 const AUTH_STORAGE_KEY = 'travel-planner-auth-session';
 
 const normalizeBaseUrl = (value: string) => value.replace(/\/$/, '');
@@ -45,6 +45,12 @@ interface RegisterRequest {
   email: string;
   password: string;
   avatar?: string;
+}
+
+interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+  confirmNewPassword: string;
 }
 
 interface RefreshTokenRequest {
@@ -433,12 +439,13 @@ export const backendConfig = {
   apiVersion: API_VERSION,
   defaultLoginEmail: DEFAULT_LOGIN_EMAIL,
   defaultLoginPassword: DEFAULT_LOGIN_PASSWORD,
+  hasSeededDevLogin: Boolean(DEFAULT_LOGIN_EMAIL && DEFAULT_LOGIN_PASSWORD),
 };
 
 export const getApiBaseUrl = () => resolvedApiBaseUrl;
 
 export const travelApi = {
-  async login(request: LoginRequest = { email: DEFAULT_LOGIN_EMAIL, password: DEFAULT_LOGIN_PASSWORD }) {
+  async login(request: LoginRequest) {
     const response = await apiRequest<AuthResponseDto>('/auth/login', {
       method: 'POST',
       body: request,
@@ -491,6 +498,14 @@ export const travelApi = {
       body: { refreshToken } satisfies RefreshTokenRequest,
     });
     authSessionStorage.clear();
+  },
+
+  async changePassword(token: string, request: ChangePasswordRequest) {
+    await apiRequest<void>('/auth/change-password', {
+      method: 'POST',
+      token,
+      body: request,
+    });
   },
 
   async getCurrentUser(token: string) {

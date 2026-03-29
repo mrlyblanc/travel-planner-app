@@ -27,7 +27,7 @@ import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import type { Dayjs } from 'dayjs';
 import { z } from 'zod';
 import type { EventInput } from '../../app/store/useTravelStore';
-import { searchMockLocations } from '../../features/events/placeAutocomplete';
+import { isGeoapifyConfigured, searchLocationSuggestions } from '../../features/events/placeAutocomplete';
 import { dayjs, formatDateTime } from '../../lib/date';
 import {
   eventCategoryOptions,
@@ -37,6 +37,7 @@ import {
   normalizeEventColor,
   timezoneOptions,
 } from '../../lib/events';
+import { roundCurrency } from '../../lib/utils';
 import type { EventAuditLog, EventCategory, ItineraryEvent, LocationSuggestion } from '../../types/event';
 import type { Itinerary } from '../../types/itinerary';
 import type { User } from '../../types/user';
@@ -157,7 +158,7 @@ const buildDefaultValues = (
       locationAddress: event.locationAddress,
       locationLat: event.locationLat,
       locationLng: event.locationLng,
-      cost: event.cost === 0 ? '0' : String(event.cost),
+      cost: roundCurrency(event.cost).toFixed(2),
     };
   }
 
@@ -196,6 +197,7 @@ export const EventDrawer = ({
   const theme = useTheme();
   const [locationOptions, setLocationOptions] = useState<LocationSuggestion[]>([]);
   const [locationInput, setLocationInput] = useState('');
+  const [isSearchingLocations, setIsSearchingLocations] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const defaultValues = useMemo(() => buildDefaultValues(itinerary, event, draftRange), [draftRange, event, itinerary]);
@@ -250,6 +252,7 @@ export const EventDrawer = ({
     if (!open) {
       setConfirmDeleteOpen(false);
       setIsDeleting(false);
+      setIsSearchingLocations(false);
     }
   }, [open]);
 
@@ -266,15 +269,32 @@ export const EventDrawer = ({
       return;
     }
 
+    const controller = new AbortController();
     let active = true;
-    searchMockLocations(locationInput).then((results) => {
-      if (active) {
-        setLocationOptions(results);
-      }
-    });
+
+    setIsSearchingLocations(true);
+
+    const timeoutId = window.setTimeout(() => {
+      void searchLocationSuggestions({
+        query: locationInput,
+        signal: controller.signal,
+      })
+        .then((results) => {
+          if (active) {
+            setLocationOptions(results);
+          }
+        })
+        .finally(() => {
+          if (active && !controller.signal.aborted) {
+            setIsSearchingLocations(false);
+          }
+        });
+    }, 280);
 
     return () => {
       active = false;
+      controller.abort();
+      window.clearTimeout(timeoutId);
     };
   }, [locationInput, open]);
 
@@ -336,7 +356,7 @@ export const EventDrawer = ({
                   locationAddress: parsedValues.locationAddress,
                   locationLat: parsedValues.locationLat,
                   locationLng: parsedValues.locationLng,
-                  cost: parsedValues.cost,
+                  cost: roundCurrency(parsedValues.cost),
                 },
                 event?.id,
               );
@@ -622,12 +642,26 @@ export const EventDrawer = ({
             render={({ field }) => (
               <Autocomplete
                 disabled={!canManage}
+                filterOptions={(options) => options}
                 freeSolo
                 getOptionLabel={(option) => (typeof option === 'string' ? option : option.name)}
                 inputValue={locationInput}
+                loading={isSearchingLocations}
+                loadingText="Searching places..."
+                noOptionsText={locationInput.trim() ? 'No matching places' : 'Start typing to search places'}
                 onChange={(_, value) => {
+                  if (!value) {
+                    field.onChange('');
+                    setLocationInput('');
+                    setValue('locationAddress', '');
+                    setValue('locationLat', null);
+                    setValue('locationLng', null);
+                    return;
+                  }
+
                   if (typeof value === 'string') {
                     field.onChange(value);
+                    setLocationInput(value);
                     setValue('locationAddress', value);
                     setValue('locationLat', null);
                     setValue('locationLng', null);
@@ -636,6 +670,7 @@ export const EventDrawer = ({
 
                   if (value) {
                     field.onChange(value.name);
+                    setLocationInput(value.name);
                     setValue('locationAddress', value.address);
                     setValue('locationLat', value.lat);
                     setValue('locationLng', value.lng);
@@ -650,7 +685,12 @@ export const EventDrawer = ({
                   <TextField
                     {...params}
                     error={Boolean(errors.location)}
-                    helperText={errors.location?.message ?? 'Mock place search, structured for later API integration'}
+                    helperText={
+                      errors.location?.message ??
+                      (isGeoapifyConfigured
+                        ? 'Search Geoapify places and pick a result to fill the matched address.'
+                        : 'Using demo place search until VITE_GEOAPIFY_API_KEY is configured.')
+                    }
                     label="Location"
                   />
                 )}
@@ -682,6 +722,21 @@ export const EventDrawer = ({
                 inputProps={{ min: 0, step: '0.01' }}
                 label="Cost (USD)"
                 onChange={field.onChange}
+                onBlur={(blurEvent) => {
+                  field.onBlur();
+
+                  const rawValue = blurEvent.target.value.trim();
+                  if (!rawValue) {
+                    return;
+                  }
+
+                  const parsedValue = Number(rawValue);
+                  if (Number.isNaN(parsedValue)) {
+                    return;
+                  }
+
+                  field.onChange(roundCurrency(parsedValue).toFixed(2));
+                }}
                 type="number"
                 value={field.value}
               />

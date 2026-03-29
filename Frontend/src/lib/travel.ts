@@ -1,4 +1,5 @@
 import { dayjs } from './date';
+import { roundCurrency } from './utils';
 import type { ItineraryEvent } from '../types/event';
 import type { User } from '../types/user';
 
@@ -9,11 +10,11 @@ export const getUserMap = (users: User[]) =>
   }, {});
 
 export const getTotalCost = (events: ItineraryEvent[]) =>
-  events.reduce((sum, event) => sum + event.cost, 0);
+  roundCurrency(events.reduce((sum, event) => sum + event.cost, 0));
 
 export const getCostByCategory = (events: ItineraryEvent[]) =>
   events.reduce<Record<string, number>>((accumulator, event) => {
-    accumulator[event.category] = (accumulator[event.category] ?? 0) + event.cost;
+    accumulator[event.category] = roundCurrency((accumulator[event.category] ?? 0) + event.cost);
     return accumulator;
   }, {});
 

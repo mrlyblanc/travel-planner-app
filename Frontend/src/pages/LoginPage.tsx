@@ -50,8 +50,13 @@ export const LoginPage = () => {
   }, [clearError]);
 
   const from = (location.state as LoginLocationState | null)?.from?.pathname ?? '/itineraries';
+  const hasSeededDevLogin = backendConfig.hasSeededDevLogin;
 
   const handleFillDemoAccount = () => {
+    if (!hasSeededDevLogin) {
+      return;
+    }
+
     setValue('email', backendConfig.defaultLoginEmail, { shouldDirty: true });
     setValue('password', backendConfig.defaultLoginPassword, { shouldDirty: true });
     clearError();
@@ -74,7 +79,7 @@ export const LoginPage = () => {
       alternatePrompt="Need a new account?"
       eyebrow="Sign in"
       subtitle="Use your backend-backed account to access shared itineraries, events, and collaboration history."
-      supplemental={
+      supplemental={hasSeededDevLogin ? (
         <DemoCard elevation={0}>
           <Stack direction="row" justifyContent="space-between" spacing={2}>
             <Box>
@@ -101,7 +106,7 @@ export const LoginPage = () => {
             </Typography>
           </Stack>
         </DemoCard>
-      }
+      ) : null}
       title="Welcome back to Trip Board"
     >
       <form onSubmit={handleLogin}>

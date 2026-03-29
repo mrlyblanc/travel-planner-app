@@ -30,7 +30,7 @@ import { ItineraryFormDialog } from '../components/itinerary/ItineraryFormDialog
 import { ShareItineraryDialog } from '../components/itinerary/ShareItineraryDialog';
 import { UserAvatarGroup } from '../components/user/UserAvatarGroup';
 import { dayjs, formatDateRange } from '../lib/date';
-import { getCostByCategory, getItineraryDuration, getTotalCost, getUpcomingEvents, getUserMap } from '../lib/travel';
+import { getItineraryDuration, getTotalCost, getUpcomingEvents, getUserMap } from '../lib/travel';
 import { currencyFormatter } from '../lib/utils';
 
 const viewOptions: Array<{ value: CalendarView; label: string }> = [
@@ -80,7 +80,6 @@ export const ItineraryDetailsPage = () => {
 
   const sortedEvents = getUpcomingEvents(events);
   const totalCost = getTotalCost(events);
-  const costByCategory = getCostByCategory(events);
   const canManage = itinerary.memberIds.includes(currentUserId);
   const selectedEvent = selectedEventId ? events.find((event) => event.id === selectedEventId) ?? null : null;
   const members = itinerary.memberIds.map((memberId) => usersMap[memberId]).filter(Boolean);
@@ -300,7 +299,7 @@ export const ItineraryDetailsPage = () => {
 
         <Grid size={{ xs: 12, xl: 4 }}>
           <Stack spacing={2.5}>
-            <CostSummaryCard byCategory={costByCategory} total={totalCost} />
+            <CostSummaryCard events={events} total={totalCost} />
             <EventListPanel
               events={sortedEvents}
               selectedEventId={selectedEventId}

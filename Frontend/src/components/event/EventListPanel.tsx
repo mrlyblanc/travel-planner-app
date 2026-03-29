@@ -105,7 +105,7 @@ export const EventListPanel = ({ events, usersMap, selectedEventId, onSelectEven
                           <Typography fontWeight={600} variant="body2">
                             {event.title}
                           </Typography>
-                          <EventCategoryChip category={event.category} />
+                          <EventCategoryChip category={event.category} color={event.color} />
                         </Stack>
                       }
                       secondary={
