@@ -85,6 +85,26 @@ export const ItineraryDetailsPage = () => {
   const selectedEvent = selectedEventId ? events.find((event) => event.id === selectedEventId) ?? null : null;
   const members = itinerary.memberIds.map((memberId) => usersMap[memberId]).filter(Boolean);
   const selectedEventHistory = selectedEvent ? eventHistory[selectedEvent.id] ?? [] : [];
+  const latestEventActivityLabel = useMemo(() => {
+    const activityTimestamps = [
+      itinerary.createdAt,
+      itinerary.updatedAt,
+      ...events.map((event) => {
+      const eventLatestTimestamp = dayjs(event.updatedAt).isAfter(dayjs(event.createdAt)) ? event.updatedAt : event.createdAt;
+        return eventLatestTimestamp;
+      }),
+    ].filter(Boolean);
+
+    const latestActivity = activityTimestamps.reduce((latest, timestamp) => {
+      if (!latest || dayjs(timestamp).isAfter(dayjs(latest))) {
+        return timestamp;
+      }
+
+      return latest;
+    }, '' as string);
+
+    return latestActivity ? dayjs(latestActivity).fromNow() : 'No activity yet';
+  }, [events, itinerary.createdAt, itinerary.updatedAt]);
 
   useEffect(() => {
     setActiveView('dayGridMonth');
@@ -189,7 +209,7 @@ export const ItineraryDetailsPage = () => {
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
                 <Metric label="Events" value={String(events.length)} />
                 <Metric label="Total cost" value={currencyFormatter.format(totalCost)} />
-                <Metric label="Last updated" value={dayjs(itinerary.updatedAt).fromNow()} />
+                <Metric label="Last updated" value={latestEventActivityLabel} />
               </Stack>
             </Stack>
 
@@ -332,6 +352,7 @@ export const ItineraryDetailsPage = () => {
         auditHistory={selectedEventHistory}
         draftRange={draftRange}
         event={selectedEvent}
+        existingEvents={events}
         itinerary={itinerary}
         onLoadHistory={loadEventHistory}
         onClose={() => {

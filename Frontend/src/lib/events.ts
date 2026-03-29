@@ -1,4 +1,5 @@
-import type { EventCategory } from '../types/event';
+import { dayjs } from './date';
+import type { EventCategory, ItineraryEvent } from '../types/event';
 
 export const eventCategoryOptions: EventCategory[] = [
   'Hotel',
@@ -78,3 +79,28 @@ export const getEventTextColor = (backgroundColor: string) => {
 
   return luminance > 0.6 ? '#16304b' : '#ffffff';
 };
+
+export const eventsOverlap = (
+  candidateStartDateTime: string,
+  candidateEndDateTime: string,
+  existingStartDateTime: string,
+  existingEndDateTime: string,
+) =>
+  dayjs(candidateStartDateTime).isBefore(dayjs(existingEndDateTime)) &&
+  dayjs(candidateEndDateTime).isAfter(dayjs(existingStartDateTime));
+
+export const findEventConflicts = ({
+  events,
+  startDateTime,
+  endDateTime,
+  excludeEventId,
+}: {
+  events: ItineraryEvent[];
+  startDateTime: string;
+  endDateTime: string;
+  excludeEventId?: string | null;
+}) =>
+  events
+    .filter((event) => event.id !== excludeEventId)
+    .filter((event) => eventsOverlap(startDateTime, endDateTime, event.startDateTime, event.endDateTime))
+    .sort((left, right) => left.startDateTime.localeCompare(right.startDateTime));

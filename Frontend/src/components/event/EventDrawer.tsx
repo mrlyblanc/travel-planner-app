@@ -18,7 +18,7 @@ import {
   useTheme,
 } from '@mui/material';
 import { DatePicker, TimePicker } from '@mui/x-date-pickers';
-import { Controller, useForm, type Resolver } from 'react-hook-form';
+import { Controller, useForm, useWatch, type Resolver } from 'react-hook-form';
 import { useEffect, useMemo, useState } from 'react';
 import type { Dayjs } from 'dayjs';
 import { z } from 'zod';
@@ -27,6 +27,7 @@ import { searchMockLocations } from '../../features/events/placeAutocomplete';
 import { dayjs, formatDateTime } from '../../lib/date';
 import {
   eventCategoryOptions,
+  findEventConflicts,
   getEventColorOptions,
   getEventTextColor,
   normalizeEventColor,
@@ -41,6 +42,7 @@ interface EventDrawerProps {
   open: boolean;
   itinerary: Itinerary;
   event: ItineraryEvent | null;
+  existingEvents: ItineraryEvent[];
   auditHistory: EventAuditLog[];
   draftRange: { start: string; end: string } | null;
   usersMap: Record<string, User>;
@@ -177,6 +179,7 @@ export const EventDrawer = ({
   open,
   itinerary,
   event,
+  existingEvents,
   auditHistory,
   draftRange,
   usersMap,
@@ -205,6 +208,25 @@ export const EventDrawer = ({
   });
 
   const locationAddress = watch('locationAddress');
+  const [startDateValue, startTimeValue, endDateValue, endTimeValue] = useWatch({
+    control,
+    name: ['startDate', 'startTime', 'endDate', 'endTime'],
+  });
+  const conflictingEvents = useMemo(() => {
+    const startDateTime = combineDateAndTime(startDateValue, startTimeValue);
+    const endDateTime = combineDateAndTime(endDateValue, endTimeValue);
+
+    if (!startDateTime || !endDateTime || !endDateTime.isAfter(startDateTime)) {
+      return [];
+    }
+
+    return findEventConflicts({
+      events: existingEvents,
+      startDateTime: startDateTime.format(),
+      endDateTime: endDateTime.format(),
+      excludeEventId: event?.id,
+    });
+  }, [endDateValue, endTimeValue, event?.id, existingEvents, startDateValue, startTimeValue]);
 
   useEffect(() => {
     reset(defaultValues);
@@ -506,6 +528,30 @@ export const EventDrawer = ({
               />
             </Stack>
           </Stack>
+
+          {conflictingEvents.length > 0 ? (
+            <Alert severity="warning">
+              <Stack spacing={0.8}>
+                <Typography fontWeight={700} variant="body2">
+                  Date conflict detected
+                </Typography>
+                <Typography variant="body2">
+                  This event overlaps with {conflictingEvents.length} existing {conflictingEvents.length === 1 ? 'event' : 'events'} in
+                  the itinerary.
+                </Typography>
+                <Stack spacing={0.5}>
+                  {conflictingEvents.slice(0, 3).map((conflict) => (
+                    <Typography key={conflict.id} variant="caption">
+                      {conflict.title} • {formatDateTime(conflict.startDateTime)} - {dayjs(conflict.endDateTime).format('h:mm A')}
+                    </Typography>
+                  ))}
+                  {conflictingEvents.length > 3 ? (
+                    <Typography variant="caption">+{conflictingEvents.length - 3} more overlapping events</Typography>
+                  ) : null}
+                </Stack>
+              </Stack>
+            </Alert>
+          ) : null}
 
           <Controller
             control={control}

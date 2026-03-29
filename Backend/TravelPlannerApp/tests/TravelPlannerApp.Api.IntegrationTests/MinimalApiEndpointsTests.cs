@@ -447,10 +447,66 @@ public sealed class MinimalApiEndpointsTests
     }
 
     [Fact]
-    public async Task UpdateEvent_WhenUserIsNotOwner_ReturnsForbidden()
+    public async Task CreateEvent_WhenUserIsItineraryMember_ReturnsCreated()
     {
         using var factory = new TravelPlannerApiFactory();
         using var client = await factory.CreateAuthenticatedClientAsync(LucaEmail);
+
+        var response = await client.PostAsJsonAsync("/api/itineraries/itinerary-tokyo/events", new CreateEventRequest
+        {
+            Title = "Late-night ramen stop",
+            Description = "Member-created event",
+            Category = EventCategory.Restaurant,
+            Color = "#F97316",
+            StartDateTime = new DateTime(2026, 4, 16, 22, 0, 0),
+            EndDateTime = new DateTime(2026, 4, 16, 23, 0, 0),
+            Timezone = "Asia/Tokyo",
+            Location = "Shibuya",
+            LocationAddress = "Dogenzaka, Shibuya City, Tokyo"
+        }, JsonOptions);
+
+        response.EnsureSuccessStatusCode();
+        var payload = await response.Content.ReadFromJsonAsync<EventResponse>(JsonOptions);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.NotNull(payload);
+        Assert.Equal("Late-night ramen stop", payload!.Title);
+    }
+
+    [Fact]
+    public async Task UpdateEvent_WhenUserIsItineraryMember_ReturnsOk()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync(LucaEmail);
+        var staleEtag = await GetEtagAsync(client, "/api/events/evt-tokyo-1");
+
+        var response = await client.SendAsync(CreateIfMatchRequest(HttpMethod.Put, "/api/events/evt-tokyo-1", new UpdateEventRequest
+        {
+            Title = "Member update",
+            Description = "Updated by itinerary member",
+            Category = EventCategory.Restaurant,
+            Color = "#F97316",
+            StartDateTime = new DateTime(2026, 4, 15, 18, 30, 0),
+            EndDateTime = new DateTime(2026, 4, 15, 21, 45, 0),
+            Timezone = "Asia/Tokyo",
+            Location = "Shibuya",
+            LocationAddress = "Dogenzaka, Shibuya City, Tokyo"
+        }, staleEtag));
+
+        response.EnsureSuccessStatusCode();
+        var payload = await response.Content.ReadFromJsonAsync<EventResponse>(JsonOptions);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.NotNull(payload);
+        Assert.Equal("Member update", payload!.Title);
+        Assert.Equal("user-luca", payload.UpdatedById);
+    }
+
+    [Fact]
+    public async Task UpdateEvent_WhenUserIsNotMember_ReturnsForbidden()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync(NoahEmail);
         var staleEtag = await GetEtagAsync(client, "/api/events/evt-tokyo-1");
 
         var response = await client.SendAsync(CreateIfMatchRequest(HttpMethod.Put, "/api/events/evt-tokyo-1", new UpdateEventRequest
@@ -471,9 +527,10 @@ public sealed class MinimalApiEndpointsTests
     public async Task DeleteEvent_AfterCreation_LeavesAuditHistoryAccessible()
     {
         using var factory = new TravelPlannerApiFactory();
-        using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
+        using var creatorClient = await factory.CreateAuthenticatedClientAsync(AvaEmail);
+        using var memberClient = await factory.CreateAuthenticatedClientAsync(LucaEmail);
 
-        var createResponse = await client.PostAsJsonAsync("/api/itineraries/itinerary-tokyo/events", new CreateEventRequest
+        var createResponse = await creatorClient.PostAsJsonAsync("/api/itineraries/itinerary-tokyo/events", new CreateEventRequest
         {
             Title = "Delete Me",
             Category = EventCategory.Other,
@@ -484,10 +541,10 @@ public sealed class MinimalApiEndpointsTests
         createResponse.EnsureSuccessStatusCode();
         var created = await createResponse.Content.ReadFromJsonAsync<EventResponse>(JsonOptions);
 
-        var deleteResponse = await client.SendAsync(CreateIfMatchRequest(HttpMethod.Delete, $"/api/events/{created!.Id}", null, createResponse.Headers.ETag!.Tag!));
+        var deleteResponse = await memberClient.SendAsync(CreateIfMatchRequest(HttpMethod.Delete, $"/api/events/{created!.Id}", null, createResponse.Headers.ETag!.Tag!));
         Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
 
-        var history = await client.GetFromJsonAsync<List<EventAuditLogResponse>>($"/api/events/{created.Id}/history", JsonOptions);
+        var history = await memberClient.GetFromJsonAsync<List<EventAuditLogResponse>>($"/api/events/{created.Id}/history", JsonOptions);
 
         Assert.NotNull(history);
         Assert.Equal(2, history!.Count);

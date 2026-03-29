@@ -1,7 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
-using TravelPlannerApp.Api.Common.Authorization;
 using TravelPlannerApp.Api.Extensions;
-using TravelPlannerApp.Application.Abstractions.Persistence;
 using TravelPlannerApp.Application.Contracts.Events;
 using TravelPlannerApp.Application.Services;
 
@@ -40,18 +37,8 @@ public static class EventEndpoints
         })
             .WithSummary("Get event");
 
-        eventGroup.MapPut("/{eventId}", async Task<IResult> (string eventId, UpdateEventRequest request, IEventService service, IEventRepository eventRepository, IAuthorizationService authorizationService, HttpContext httpContext, CancellationToken cancellationToken) =>
+        eventGroup.MapPut("/{eventId}", async Task<IResult> (string eventId, UpdateEventRequest request, IEventService service, HttpContext httpContext, CancellationToken cancellationToken) =>
         {
-            var eventEntity = await eventRepository.GetByIdAsync(eventId, cancellationToken);
-            if (eventEntity is not null)
-            {
-                var authorizationResult = await authorizationService.AuthorizeAsync(httpContext.User, eventEntity, AuthorizationPolicies.ResourceOwner);
-                if (!authorizationResult.Succeeded)
-                {
-                    return Results.Forbid();
-                }
-            }
-
             var response = await service.UpdateEventAsync(eventId, httpContext.Request.GetIfMatchVersion(), request, cancellationToken);
             httpContext.Response.SetETag(response.Version);
             return Results.Ok(response);
@@ -60,18 +47,8 @@ public static class EventEndpoints
             .RequireIfMatchHeader()
             .WithSummary("Update event");
 
-        eventGroup.MapDelete("/{eventId}", async Task<IResult> (string eventId, IEventService service, IEventRepository eventRepository, IAuthorizationService authorizationService, HttpContext httpContext, CancellationToken cancellationToken) =>
+        eventGroup.MapDelete("/{eventId}", async Task<IResult> (string eventId, IEventService service, HttpContext httpContext, CancellationToken cancellationToken) =>
         {
-            var eventEntity = await eventRepository.GetByIdAsync(eventId, cancellationToken);
-            if (eventEntity is not null)
-            {
-                var authorizationResult = await authorizationService.AuthorizeAsync(httpContext.User, eventEntity, AuthorizationPolicies.ResourceOwner);
-                if (!authorizationResult.Succeeded)
-                {
-                    return Results.Forbid();
-                }
-            }
-
             await service.DeleteEventAsync(eventId, httpContext.Request.GetIfMatchVersion(), cancellationToken);
             return Results.NoContent();
         })

@@ -89,12 +89,12 @@ Ownership rules:
 - user profile updates: only the profile owner
 - itinerary updates: only the itinerary creator
 - itinerary member replacement: only the itinerary creator
-- event updates and deletes: only the event creator
+- event updates and deletes: any itinerary member
 
 General access rules:
 - authenticated users can list and read users
 - itinerary and event reads require itinerary membership
-- itinerary members can create events
+- itinerary members can create, update, and delete events
 
 ## API Versioning
 - Header-based versioning
