@@ -94,6 +94,7 @@ public sealed class ItineraryServiceTests
         Assert.Equal(ava.Id, itinerary.CreatedById);
         Assert.Contains(itinerary.Members, member => member.UserId == ava.Id);
         Assert.Equal(response.Id, itinerary.Id);
+        Assert.False(string.IsNullOrWhiteSpace(response.Version));
         Assert.Single(notifier.Notifications);
         Assert.Equal("itinerary.created", notifier.Notifications[0].Type);
         Assert.Equal(1, unitOfWork.SaveChangesCalls);
@@ -119,7 +120,8 @@ public sealed class ItineraryServiceTests
             new FakeUnitOfWork(),
             notifier);
 
-        var response = await service.UpdateItineraryAsync(itinerary.Id, new UpdateItineraryRequest
+        var originalVersion = itinerary.ConcurrencyToken;
+        var response = await service.UpdateItineraryAsync(itinerary.Id, originalVersion, new UpdateItineraryRequest
         {
             Title = "New title",
             Destination = "Seoul",
@@ -131,6 +133,7 @@ public sealed class ItineraryServiceTests
         Assert.Equal("New title", itinerary.Title);
         Assert.Equal("Seoul", itinerary.Destination);
         Assert.Equal(response.Title, itinerary.Title);
+        Assert.NotEqual(originalVersion, response.Version);
         Assert.Single(notifier.Notifications);
         Assert.Equal("itinerary.updated", notifier.Notifications[0].Type);
     }
@@ -160,7 +163,8 @@ public sealed class ItineraryServiceTests
             new FakeUnitOfWork(),
             notifier);
 
-        var response = await service.ReplaceMembersAsync(itinerary.Id, new ReplaceItineraryMembersRequest
+        var originalVersion = itinerary.ConcurrencyToken;
+        var response = await service.ReplaceMembersAsync(itinerary.Id, originalVersion, new ReplaceItineraryMembersRequest
         {
             UserIds = [luca.Id]
         });
@@ -169,6 +173,7 @@ public sealed class ItineraryServiceTests
         Assert.DoesNotContain(response, member => member.UserId == mina.Id);
         Assert.Single(notifier.Notifications);
         Assert.Equal("itinerary.members.updated", notifier.Notifications[0].Type);
+        Assert.NotEqual(originalVersion, itinerary.ConcurrencyToken);
     }
 
     [Fact]
@@ -190,9 +195,34 @@ public sealed class ItineraryServiceTests
             new FakeUnitOfWork(),
             new FakeRealtimeNotifier());
 
-        await Assert.ThrowsAsync<BadRequestException>(() => service.ReplaceMembersAsync(itinerary.Id, new ReplaceItineraryMembersRequest
+        await Assert.ThrowsAsync<BadRequestException>(() => service.ReplaceMembersAsync(itinerary.Id, itinerary.ConcurrencyToken, new ReplaceItineraryMembersRequest
         {
             UserIds = ["user-missing"]
+        }));
+    }
+
+    [Fact]
+    public async Task ReplaceMembersAsync_WithStaleExpectedVersion_ThrowsPreconditionFailedException()
+    {
+        var ava = TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com");
+        var itinerary = TestDataFactory.CreateItinerary("itinerary-tokyo", ava.Id);
+        itinerary.Members.Add(TestDataFactory.CreateMember(itinerary, ava));
+
+        var userRepository = new FakeUserRepository();
+        userRepository.Users.Add(ava);
+        var itineraryRepository = new FakeItineraryRepository();
+        itineraryRepository.Itineraries.Add(itinerary);
+
+        var service = new ItineraryService(
+            new FakeCurrentUserAccessor { CurrentUserId = ava.Id },
+            userRepository,
+            itineraryRepository,
+            new FakeUnitOfWork(),
+            new FakeRealtimeNotifier());
+
+        await Assert.ThrowsAsync<PreconditionFailedException>(() => service.ReplaceMembersAsync(itinerary.Id, "stale-version", new ReplaceItineraryMembersRequest
+        {
+            UserIds = [ava.Id]
         }));
     }
 }

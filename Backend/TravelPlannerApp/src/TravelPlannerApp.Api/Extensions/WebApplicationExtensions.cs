@@ -1,3 +1,5 @@
+using Asp.Versioning;
+using Serilog;
 using TravelPlannerApp.Api.Common.Errors;
 using TravelPlannerApp.Api.Endpoints;
 using TravelPlannerApp.Api.Realtime;
@@ -8,6 +10,31 @@ public static class WebApplicationExtensions
 {
     public static WebApplication UseApiDefaults(this WebApplication app)
     {
+        app.UseSerilogRequestLogging(options =>
+        {
+            options.GetLevel = static (httpContext, _, exception) =>
+            {
+                if (exception is not null || httpContext.Response.StatusCode >= 500)
+                {
+                    return Serilog.Events.LogEventLevel.Error;
+                }
+
+                if (httpContext.Response.StatusCode >= 400)
+                {
+                    return Serilog.Events.LogEventLevel.Warning;
+                }
+
+                return Serilog.Events.LogEventLevel.Information;
+            };
+
+            options.EnrichDiagnosticContext = static (diagnosticContext, httpContext) =>
+            {
+                diagnosticContext.Set("TraceId", httpContext.TraceIdentifier);
+                diagnosticContext.Set("RequestHost", httpContext.Request.Host.Value ?? string.Empty);
+                diagnosticContext.Set("RequestScheme", httpContext.Request.Scheme);
+                diagnosticContext.Set("CurrentUserId", httpContext.Request.Headers["X-User-Id"].FirstOrDefault() ?? "anonymous");
+            };
+        });
         app.UseMiddleware<AppExceptionMiddleware>();
         app.UseSwagger();
         app.UseSwaggerUI();
@@ -20,7 +47,16 @@ public static class WebApplicationExtensions
     {
         app.MapGet("/", static () => Results.Redirect("/swagger"));
 
-        var api = app.MapGroup("/api");
+        var apiVersionSet = app.NewApiVersionSet()
+            .HasApiVersion(new ApiVersion(1, 0))
+            .ReportApiVersions()
+            .Build();
+
+        var api = app.MapGroup("/api")
+            .WithApiVersionSet(apiVersionSet)
+            .HasApiVersion(new ApiVersion(1, 0))
+            .RequireApiVersionHeader();
+
         api.MapUserEndpoints();
         api.MapItineraryEndpoints();
         api.MapItineraryMemberEndpoints();

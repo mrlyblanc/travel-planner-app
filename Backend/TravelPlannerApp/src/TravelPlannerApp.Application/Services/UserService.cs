@@ -48,6 +48,7 @@ public sealed class UserService : IUserService
         var user = new User
         {
             Id = IdGenerator.New("user"),
+            ConcurrencyToken = ConcurrencyTokenHelper.NewToken(),
             Name = request.Name.Trim(),
             Email = normalizedEmail,
             Avatar = ResolveAvatar(request.Avatar, request.Name),
@@ -59,10 +60,11 @@ public sealed class UserService : IUserService
         return user.ToResponse();
     }
 
-    public async Task<UserResponse> UpdateUserAsync(string userId, UpdateUserRequest request, CancellationToken cancellationToken = default)
+    public async Task<UserResponse> UpdateUserAsync(string userId, string? expectedVersion, UpdateUserRequest request, CancellationToken cancellationToken = default)
     {
         var user = await _userRepository.GetByIdAsync(userId, cancellationToken)
             ?? throw new NotFoundException($"User '{userId}' was not found.");
+        ConcurrencyTokenHelper.EnsureMatches(user.ConcurrencyToken, expectedVersion);
 
         var normalizedEmail = NormalizeEmail(request.Email);
         var existingUser = await _userRepository.GetByEmailAsync(normalizedEmail, cancellationToken);
@@ -74,6 +76,7 @@ public sealed class UserService : IUserService
         user.Name = request.Name.Trim();
         user.Email = normalizedEmail;
         user.Avatar = ResolveAvatar(request.Avatar, user.Name);
+        user.ConcurrencyToken = ConcurrencyTokenHelper.NewToken();
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         return user.ToResponse();

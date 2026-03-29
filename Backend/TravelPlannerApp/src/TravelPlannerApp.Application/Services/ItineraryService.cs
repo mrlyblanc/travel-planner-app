@@ -63,6 +63,7 @@ public sealed class ItineraryService : IItineraryService
         var itinerary = new Itinerary
         {
             Id = IdGenerator.New("itinerary"),
+            ConcurrencyToken = ConcurrencyTokenHelper.NewToken(),
             Title = request.Title.Trim(),
             Description = request.Description?.Trim(),
             Destination = request.Destination.Trim(),
@@ -94,7 +95,7 @@ public sealed class ItineraryService : IItineraryService
         return itinerary.ToResponse();
     }
 
-    public async Task<ItineraryResponse> UpdateItineraryAsync(string itineraryId, UpdateItineraryRequest request, CancellationToken cancellationToken = default)
+    public async Task<ItineraryResponse> UpdateItineraryAsync(string itineraryId, string? expectedVersion, UpdateItineraryRequest request, CancellationToken cancellationToken = default)
     {
         var currentUser = await GetCurrentUserAsync(cancellationToken);
         var itinerary = await _itineraryRepository.GetAccessibleByIdAsync(currentUser.Id, itineraryId, cancellationToken);
@@ -103,11 +104,13 @@ public sealed class ItineraryService : IItineraryService
             await ThrowItineraryAccessExceptionAsync(itineraryId, cancellationToken);
         }
 
-        itinerary!.Title = request.Title.Trim();
+        ConcurrencyTokenHelper.EnsureMatches(itinerary!.ConcurrencyToken, expectedVersion);
+        itinerary.Title = request.Title.Trim();
         itinerary.Description = request.Description?.Trim();
         itinerary.Destination = request.Destination.Trim();
         itinerary.StartDate = request.StartDate;
         itinerary.EndDate = request.EndDate;
+        itinerary.ConcurrencyToken = ConcurrencyTokenHelper.NewToken();
         itinerary.UpdatedAtUtc = DateTime.UtcNow;
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -136,7 +139,7 @@ public sealed class ItineraryService : IItineraryService
             .ToList();
     }
 
-    public async Task<IReadOnlyList<ItineraryMemberResponse>> ReplaceMembersAsync(string itineraryId, ReplaceItineraryMembersRequest request, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<ItineraryMemberResponse>> ReplaceMembersAsync(string itineraryId, string? expectedVersion, ReplaceItineraryMembersRequest request, CancellationToken cancellationToken = default)
     {
         var currentUser = await GetCurrentUserAsync(cancellationToken);
         var itinerary = await _itineraryRepository.GetAccessibleByIdAsync(currentUser.Id, itineraryId, cancellationToken);
@@ -145,13 +148,15 @@ public sealed class ItineraryService : IItineraryService
             await ThrowItineraryAccessExceptionAsync(itineraryId, cancellationToken);
         }
 
+        ConcurrencyTokenHelper.EnsureMatches(itinerary!.ConcurrencyToken, expectedVersion);
+
         var requestedUserIds = request.UserIds
             .Where(static userId => !string.IsNullOrWhiteSpace(userId))
             .Select(static userId => userId.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        if (!requestedUserIds.Contains(itinerary!.CreatedById, StringComparer.OrdinalIgnoreCase))
+        if (!requestedUserIds.Contains(itinerary.CreatedById, StringComparer.OrdinalIgnoreCase))
         {
             requestedUserIds.Add(itinerary.CreatedById);
         }
@@ -205,6 +210,7 @@ public sealed class ItineraryService : IItineraryService
             await _itineraryRepository.AddMembersAsync(membersToAdd, cancellationToken);
         }
 
+        itinerary.ConcurrencyToken = ConcurrencyTokenHelper.NewToken();
         itinerary.UpdatedAtUtc = DateTime.UtcNow;
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 

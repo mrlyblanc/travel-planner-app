@@ -2,6 +2,7 @@ using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using TravelPlannerApp.Application.Abstractions.Persistence;
 using TravelPlannerApp.Infrastructure.Persistence;
 using TravelPlannerApp.Infrastructure.Persistence.Repositories;
@@ -46,10 +47,14 @@ public static class DependencyInjection
     {
         using var scope = services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<TravelPlannerDbContext>();
+        var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("TravelPlannerApp.Infrastructure.DatabaseInitialiser");
+
+        logger.LogInformation("Initialising database with provider {ProviderName}", dbContext.Database.ProviderName);
 
         if (dbContext.Database.ProviderName is "Microsoft.EntityFrameworkCore.SqlServer" or "Microsoft.EntityFrameworkCore.Sqlite")
         {
             await dbContext.Database.EnsureCreatedAsync();
+            await EnsureSqlServerConcurrencyColumnsAsync(dbContext, logger);
         }
         else
         {
@@ -58,6 +63,40 @@ public static class DependencyInjection
 
         var seeder = scope.ServiceProvider.GetRequiredService<TravelPlannerDbSeeder>();
         await seeder.SeedAsync();
+        logger.LogInformation("Database initialisation complete");
+    }
+
+    private static async Task EnsureSqlServerConcurrencyColumnsAsync(TravelPlannerDbContext dbContext, ILogger logger)
+    {
+        if (dbContext.Database.ProviderName != "Microsoft.EntityFrameworkCore.SqlServer")
+        {
+            return;
+        }
+
+        logger.LogInformation("Ensuring SQL Server concurrency columns are present");
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            IF OBJECT_ID(N'[users]', N'U') IS NOT NULL AND COL_LENGTH('users', 'ConcurrencyToken') IS NULL
+            BEGIN
+                ALTER TABLE [users] ADD [ConcurrencyToken] nvarchar(40) NOT NULL CONSTRAINT [DF_users_ConcurrencyToken] DEFAULT '';
+                UPDATE [users] SET [ConcurrencyToken] = LOWER(REPLACE(CONVERT(varchar(36), NEWID()), '-', '')) WHERE [ConcurrencyToken] = '';
+                ALTER TABLE [users] DROP CONSTRAINT [DF_users_ConcurrencyToken];
+            END;
+
+            IF OBJECT_ID(N'[itineraries]', N'U') IS NOT NULL AND COL_LENGTH('itineraries', 'ConcurrencyToken') IS NULL
+            BEGIN
+                ALTER TABLE [itineraries] ADD [ConcurrencyToken] nvarchar(40) NOT NULL CONSTRAINT [DF_itineraries_ConcurrencyToken] DEFAULT '';
+                UPDATE [itineraries] SET [ConcurrencyToken] = LOWER(REPLACE(CONVERT(varchar(36), NEWID()), '-', '')) WHERE [ConcurrencyToken] = '';
+                ALTER TABLE [itineraries] DROP CONSTRAINT [DF_itineraries_ConcurrencyToken];
+            END;
+
+            IF OBJECT_ID(N'[events]', N'U') IS NOT NULL AND COL_LENGTH('events', 'ConcurrencyToken') IS NULL
+            BEGIN
+                ALTER TABLE [events] ADD [ConcurrencyToken] nvarchar(40) NOT NULL CONSTRAINT [DF_events_ConcurrencyToken] DEFAULT '';
+                UPDATE [events] SET [ConcurrencyToken] = LOWER(REPLACE(CONVERT(varchar(36), NEWID()), '-', '')) WHERE [ConcurrencyToken] = '';
+                ALTER TABLE [events] DROP CONSTRAINT [DF_events_ConcurrencyToken];
+            END;
+            """);
     }
 
     private static void ConfigureMySql(DbContextOptionsBuilder options, IConfiguration configuration)

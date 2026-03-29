@@ -1,8 +1,11 @@
+using Asp.Versioning;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Http.Json;
+using Microsoft.Net.Http.Headers;
 using TravelPlannerApp.Api.Common.CurrentUser;
 using TravelPlannerApp.Api.Common.Swagger;
+using TravelPlannerApp.Api.Common.Versioning;
 using TravelPlannerApp.Api.Realtime;
 using TravelPlannerApp.Application.Abstractions.CurrentUser;
 using TravelPlannerApp.Application.Abstractions.Realtime;
@@ -17,6 +20,13 @@ public static class ServiceCollectionExtensions
     {
         services.ConfigureHttpJsonOptions(static options => ConfigureJson(options.SerializerOptions));
         services.AddSignalR().AddJsonProtocol(static options => ConfigureJson(options.PayloadSerializerOptions));
+        services.AddApiVersioning(options =>
+        {
+            options.DefaultApiVersion = new ApiVersion(1, 0);
+            options.AssumeDefaultVersionWhenUnspecified = true;
+            options.ApiVersionReader = new HeaderApiVersionReader(ApiVersioningConstants.HeaderName);
+            options.ReportApiVersions = true;
+        });
         services.AddCors(options =>
         {
             var origins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
@@ -27,6 +37,7 @@ public static class ServiceCollectionExtensions
                 policy.WithOrigins(origins)
                     .AllowAnyHeader()
                     .AllowAnyMethod()
+                    .WithExposedHeaders(HeaderNames.ETag, "api-supported-versions")
                     .AllowCredentials();
             });
         });

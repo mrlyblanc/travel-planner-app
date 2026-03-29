@@ -1,6 +1,8 @@
 .env
 .idea/
 .vs/
+logs/
+.artifacts/
 **/bin/
 **/obj/
 **/TestResults/

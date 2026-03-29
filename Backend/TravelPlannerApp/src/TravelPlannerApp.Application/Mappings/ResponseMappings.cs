@@ -11,13 +11,14 @@ public static class ResponseMappings
 {
     public static UserResponse ToResponse(this User user)
     {
-        return new UserResponse(user.Id, user.Name, user.Email, user.Avatar, user.CreatedAtUtc);
+        return new UserResponse(user.Id, user.ConcurrencyToken, user.Name, user.Email, user.Avatar, user.CreatedAtUtc);
     }
 
     public static ItineraryResponse ToResponse(this Itinerary itinerary)
     {
         return new ItineraryResponse(
             itinerary.Id,
+            itinerary.ConcurrencyToken,
             itinerary.Title,
             itinerary.Description,
             itinerary.Destination,
@@ -45,6 +46,7 @@ public static class ResponseMappings
     {
         return new EventResponse(
             eventEntity.Id,
+            eventEntity.ConcurrencyToken,
             eventEntity.ItineraryId,
             eventEntity.Title,
             eventEntity.Description,

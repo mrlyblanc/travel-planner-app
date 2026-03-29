@@ -16,21 +16,31 @@ public static class ItineraryEndpoints
             Results.Ok(await service.GetAccessibleItinerariesAsync(cancellationToken)))
             .WithSummary("List accessible itineraries");
 
-        group.MapGet("/{itineraryId}", async (string itineraryId, IItineraryService service, CancellationToken cancellationToken) =>
-            Results.Ok(await service.GetItineraryByIdAsync(itineraryId, cancellationToken)))
+        group.MapGet("/{itineraryId}", async (string itineraryId, IItineraryService service, HttpContext httpContext, CancellationToken cancellationToken) =>
+        {
+            var response = await service.GetItineraryByIdAsync(itineraryId, cancellationToken);
+            httpContext.Response.SetETag(response.Version);
+            return TypedResults.Ok(response);
+        })
             .WithSummary("Get itinerary");
 
-        group.MapPost("/", async (CreateItineraryRequest request, IItineraryService service, CancellationToken cancellationToken) =>
+        group.MapPost("/", async (CreateItineraryRequest request, IItineraryService service, HttpContext httpContext, CancellationToken cancellationToken) =>
         {
             var response = await service.CreateItineraryAsync(request, cancellationToken);
-            return Results.Created($"/api/itineraries/{response.Id}", response);
+            httpContext.Response.SetETag(response.Version);
+            return TypedResults.Created($"/api/itineraries/{response.Id}", response);
         })
             .Validate<CreateItineraryRequest>()
             .WithSummary("Create itinerary");
 
-        group.MapPut("/{itineraryId}", async (string itineraryId, UpdateItineraryRequest request, IItineraryService service, CancellationToken cancellationToken) =>
-            Results.Ok(await service.UpdateItineraryAsync(itineraryId, request, cancellationToken)))
+        group.MapPut("/{itineraryId}", async (string itineraryId, UpdateItineraryRequest request, IItineraryService service, HttpContext httpContext, CancellationToken cancellationToken) =>
+        {
+            var response = await service.UpdateItineraryAsync(itineraryId, httpContext.Request.GetIfMatchVersion(), request, cancellationToken);
+            httpContext.Response.SetETag(response.Version);
+            return TypedResults.Ok(response);
+        })
             .Validate<UpdateItineraryRequest>()
+            .RequireIfMatchHeader()
             .WithSummary("Update itinerary");
 
         return builder;

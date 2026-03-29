@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using TravelPlannerApp.Application.Common.Utilities;
 using TravelPlannerApp.Application.Mappings;
 using TravelPlannerApp.Domain.Entities;
@@ -10,18 +11,23 @@ namespace TravelPlannerApp.Infrastructure.Persistence.Seed;
 public sealed class TravelPlannerDbSeeder
 {
     private readonly TravelPlannerDbContext _dbContext;
+    private readonly ILogger<TravelPlannerDbSeeder> _logger;
 
-    public TravelPlannerDbSeeder(TravelPlannerDbContext dbContext)
+    public TravelPlannerDbSeeder(TravelPlannerDbContext dbContext, ILogger<TravelPlannerDbSeeder> logger)
     {
         _dbContext = dbContext;
+        _logger = logger;
     }
 
     public async Task SeedAsync(CancellationToken cancellationToken = default)
     {
         if (await _dbContext.Users.AnyAsync(cancellationToken))
         {
+            _logger.LogDebug("Seed data skipped because users already exist");
             return;
         }
+
+        _logger.LogInformation("Seeding initial travel planner data");
 
         var users = CreateUsers();
         await _dbContext.Users.AddRangeAsync(users, cancellationToken);
@@ -39,6 +45,7 @@ public sealed class TravelPlannerDbSeeder
         await _dbContext.EventAuditLogs.AddRangeAsync(auditLogs, cancellationToken);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+        _logger.LogInformation("Seed data inserted successfully");
     }
 
     private static List<User> CreateUsers()
@@ -47,12 +54,12 @@ public sealed class TravelPlannerDbSeeder
 
         return
         [
-            new User { Id = "user-ava", Name = "Ava Santos", Email = "ava.santos@globejet.com", Avatar = "AS", CreatedAtUtc = createdAt },
-            new User { Id = "user-luca", Name = "Luca Reyes", Email = "luca.reyes@globejet.com", Avatar = "LR", CreatedAtUtc = createdAt.AddMinutes(2) },
-            new User { Id = "user-mina", Name = "Mina Park", Email = "mina.park@globejet.com", Avatar = "MP", CreatedAtUtc = createdAt.AddMinutes(4) },
-            new User { Id = "user-ethan", Name = "Ethan Cruz", Email = "ethan.cruz@globejet.com", Avatar = "EC", CreatedAtUtc = createdAt.AddMinutes(6) },
-            new User { Id = "user-sofia", Name = "Sofia Lim", Email = "sofia.lim@globejet.com", Avatar = "SL", CreatedAtUtc = createdAt.AddMinutes(8) },
-            new User { Id = "user-noah", Name = "Noah Tan", Email = "noah.tan@globejet.com", Avatar = "NT", CreatedAtUtc = createdAt.AddMinutes(10) }
+            new User { Id = "user-ava", ConcurrencyToken = "00000000000000000000000000000011", Name = "Ava Santos", Email = "ava.santos@globejet.com", Avatar = "AS", CreatedAtUtc = createdAt },
+            new User { Id = "user-luca", ConcurrencyToken = "00000000000000000000000000000012", Name = "Luca Reyes", Email = "luca.reyes@globejet.com", Avatar = "LR", CreatedAtUtc = createdAt.AddMinutes(2) },
+            new User { Id = "user-mina", ConcurrencyToken = "00000000000000000000000000000013", Name = "Mina Park", Email = "mina.park@globejet.com", Avatar = "MP", CreatedAtUtc = createdAt.AddMinutes(4) },
+            new User { Id = "user-ethan", ConcurrencyToken = "00000000000000000000000000000014", Name = "Ethan Cruz", Email = "ethan.cruz@globejet.com", Avatar = "EC", CreatedAtUtc = createdAt.AddMinutes(6) },
+            new User { Id = "user-sofia", ConcurrencyToken = "00000000000000000000000000000015", Name = "Sofia Lim", Email = "sofia.lim@globejet.com", Avatar = "SL", CreatedAtUtc = createdAt.AddMinutes(8) },
+            new User { Id = "user-noah", ConcurrencyToken = "00000000000000000000000000000016", Name = "Noah Tan", Email = "noah.tan@globejet.com", Avatar = "NT", CreatedAtUtc = createdAt.AddMinutes(10) }
         ];
     }
 
@@ -65,6 +72,7 @@ public sealed class TravelPlannerDbSeeder
             new Itinerary
             {
                 Id = "itinerary-tokyo",
+                ConcurrencyToken = "10000000000000000000000000000011",
                 Title = "Tokyo Food Sprint",
                 Description = "A packed four-day food and district itinerary.",
                 Destination = "Tokyo, Japan",
@@ -77,6 +85,7 @@ public sealed class TravelPlannerDbSeeder
             new Itinerary
             {
                 Id = "itinerary-seoul",
+                ConcurrencyToken = "10000000000000000000000000000012",
                 Title = "Seoul Design Week",
                 Description = "Cafes, design shops, and gallery stops.",
                 Destination = "Seoul, South Korea",
@@ -89,6 +98,7 @@ public sealed class TravelPlannerDbSeeder
             new Itinerary
             {
                 Id = "itinerary-singapore",
+                ConcurrencyToken = "10000000000000000000000000000013",
                 Title = "Singapore Weekend Reset",
                 Description = "Fast city weekend with hawker centers and gardens.",
                 Destination = "Singapore",
@@ -101,6 +111,7 @@ public sealed class TravelPlannerDbSeeder
             new Itinerary
             {
                 Id = "itinerary-bali",
+                ConcurrencyToken = "10000000000000000000000000000014",
                 Title = "Bali Surf Days",
                 Description = "Beach, surf lessons, and sunset dinners.",
                 Destination = "Bali, Indonesia",
@@ -113,6 +124,7 @@ public sealed class TravelPlannerDbSeeder
             new Itinerary
             {
                 Id = "itinerary-manila",
+                ConcurrencyToken = "10000000000000000000000000000015",
                 Title = "Manila Family Visit",
                 Description = "Flexible city schedule with family stops.",
                 Destination = "Manila, Philippines",
@@ -155,6 +167,7 @@ public sealed class TravelPlannerDbSeeder
             new Event
             {
                 Id = "evt-tokyo-1",
+                ConcurrencyToken = "20000000000000000000000000000011",
                 ItineraryId = "itinerary-tokyo",
                 Title = "Shibuya Food Walk",
                 Description = "Izakaya crawl and late ramen stop.",
@@ -176,6 +189,7 @@ public sealed class TravelPlannerDbSeeder
             new Event
             {
                 Id = "evt-seoul-1",
+                ConcurrencyToken = "20000000000000000000000000000012",
                 ItineraryId = "itinerary-seoul",
                 Title = "DDP Night Visit",
                 Description = "Evening architecture walk and exhibit pass.",
@@ -197,6 +211,7 @@ public sealed class TravelPlannerDbSeeder
             new Event
             {
                 Id = "evt-singapore-1",
+                ConcurrencyToken = "20000000000000000000000000000013",
                 ItineraryId = "itinerary-singapore",
                 Title = "Gardens by the Bay",
                 Description = "Cloud Forest in the afternoon.",

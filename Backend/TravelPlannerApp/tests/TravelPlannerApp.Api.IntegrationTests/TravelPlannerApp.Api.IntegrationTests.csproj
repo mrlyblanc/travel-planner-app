@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <Threshold>80,45</Threshold>
-    <Include>[TravelPlannerApp.Api]*,[TravelPlannerApp.Infrastructure]*</Include>
+    <Include>[TravelPlannerApp.Api]*</Include>
   </PropertyGroup>
 
   <ItemGroup>

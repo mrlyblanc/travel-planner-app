@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using TravelPlannerApp.Application.Abstractions.Persistence;
+using TravelPlannerApp.Application.Common.Exceptions;
 using TravelPlannerApp.Domain.Entities;
 
 namespace TravelPlannerApp.Infrastructure.Persistence;
@@ -16,6 +17,18 @@ public sealed class TravelPlannerDbContext : DbContext, IUnitOfWork
     public DbSet<Event> Events => Set<Event>();
     public DbSet<EventAuditLog> EventAuditLogs => Set<EventAuditLog>();
 
+    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await base.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new PreconditionFailedException("The resource was modified by another user. Refresh and retry.");
+        }
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -25,6 +38,7 @@ public sealed class TravelPlannerDbContext : DbContext, IUnitOfWork
             entity.ToTable("users");
             entity.HasKey(user => user.Id);
             entity.Property(user => user.Id).HasMaxLength(80);
+            entity.Property(user => user.ConcurrencyToken).HasMaxLength(40).IsConcurrencyToken().IsRequired();
             entity.Property(user => user.Name).HasMaxLength(120).IsRequired();
             entity.Property(user => user.Email).HasMaxLength(200).IsRequired();
             entity.Property(user => user.Avatar).HasMaxLength(16).IsRequired();
@@ -36,6 +50,7 @@ public sealed class TravelPlannerDbContext : DbContext, IUnitOfWork
             entity.ToTable("itineraries");
             entity.HasKey(itinerary => itinerary.Id);
             entity.Property(itinerary => itinerary.Id).HasMaxLength(80);
+            entity.Property(itinerary => itinerary.ConcurrencyToken).HasMaxLength(40).IsConcurrencyToken().IsRequired();
             entity.Property(itinerary => itinerary.Title).HasMaxLength(160).IsRequired();
             entity.Property(itinerary => itinerary.Description).HasMaxLength(2000);
             entity.Property(itinerary => itinerary.Destination).HasMaxLength(160).IsRequired();
@@ -73,6 +88,7 @@ public sealed class TravelPlannerDbContext : DbContext, IUnitOfWork
             entity.ToTable("events");
             entity.HasKey(eventEntity => eventEntity.Id);
             entity.Property(eventEntity => eventEntity.Id).HasMaxLength(80);
+            entity.Property(eventEntity => eventEntity.ConcurrencyToken).HasMaxLength(40).IsConcurrencyToken().IsRequired();
             entity.Property(eventEntity => eventEntity.Title).HasMaxLength(160).IsRequired();
             entity.Property(eventEntity => eventEntity.Description).HasMaxLength(4000);
             entity.Property(eventEntity => eventEntity.Category).HasConversion<string>().HasMaxLength(32);

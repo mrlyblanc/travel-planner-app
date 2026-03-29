@@ -14,21 +14,31 @@ public static class UserEndpoints
             Results.Ok(await service.GetUsersAsync(cancellationToken)))
             .WithSummary("List users");
 
-        group.MapGet("/{userId}", async (string userId, IUserService service, CancellationToken cancellationToken) =>
-            Results.Ok(await service.GetUserByIdAsync(userId, cancellationToken)))
+        group.MapGet("/{userId}", async (string userId, IUserService service, HttpContext httpContext, CancellationToken cancellationToken) =>
+        {
+            var response = await service.GetUserByIdAsync(userId, cancellationToken);
+            httpContext.Response.SetETag(response.Version);
+            return TypedResults.Ok(response);
+        })
             .WithSummary("Get user");
 
-        group.MapPost("/", async (CreateUserRequest request, IUserService service, CancellationToken cancellationToken) =>
+        group.MapPost("/", async (CreateUserRequest request, IUserService service, HttpContext httpContext, CancellationToken cancellationToken) =>
         {
             var response = await service.CreateUserAsync(request, cancellationToken);
-            return Results.Created($"/api/users/{response.Id}", response);
+            httpContext.Response.SetETag(response.Version);
+            return TypedResults.Created($"/api/users/{response.Id}", response);
         })
             .Validate<CreateUserRequest>()
             .WithSummary("Create user");
 
-        group.MapPut("/{userId}", async (string userId, UpdateUserRequest request, IUserService service, CancellationToken cancellationToken) =>
-            Results.Ok(await service.UpdateUserAsync(userId, request, cancellationToken)))
+        group.MapPut("/{userId}", async (string userId, UpdateUserRequest request, IUserService service, HttpContext httpContext, CancellationToken cancellationToken) =>
+        {
+            var response = await service.UpdateUserAsync(userId, httpContext.Request.GetIfMatchVersion(), request, cancellationToken);
+            httpContext.Response.SetETag(response.Version);
+            return TypedResults.Ok(response);
+        })
             .Validate<UpdateUserRequest>()
+            .RequireIfMatchHeader()
             .WithSummary("Update user");
 
         return builder;

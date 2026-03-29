@@ -92,6 +92,7 @@ public sealed class EventServiceTests
         });
 
         Assert.Equal("Shibuya Walk", response.Title);
+        Assert.False(string.IsNullOrWhiteSpace(response.Version));
         Assert.Single(eventRepository.Events);
         Assert.Single(eventRepository.AuditLogs);
         Assert.Equal(EventAuditAction.Created, eventRepository.AuditLogs[0].Action);
@@ -111,7 +112,8 @@ public sealed class EventServiceTests
         eventRepository.Events.Add(existingEvent);
         var service = CreateService(ava, [ava], [itinerary], [existingEvent], eventRepository);
 
-        await service.UpdateEventAsync(existingEvent.Id, new UpdateEventRequest
+        var originalVersion = existingEvent.ConcurrencyToken;
+        await service.UpdateEventAsync(existingEvent.Id, originalVersion, new UpdateEventRequest
         {
             Title = "Dinner",
             Description = existingEvent.Description,
@@ -129,6 +131,7 @@ public sealed class EventServiceTests
 
         var audit = Assert.Single(eventRepository.AuditLogs);
         Assert.Equal("Rescheduled event 'Dinner'.", audit.Summary);
+        Assert.NotEqual(originalVersion, existingEvent.ConcurrencyToken);
     }
 
     [Fact]
@@ -164,13 +167,57 @@ public sealed class EventServiceTests
         var notifier = new FakeRealtimeNotifier();
         var service = CreateService(ava, [ava], [itinerary], [existingEvent], eventRepository, notifier);
 
-        await service.DeleteEventAsync(existingEvent.Id);
+        await service.DeleteEventAsync(existingEvent.Id, existingEvent.ConcurrencyToken);
 
         Assert.Empty(eventRepository.Events);
         Assert.Single(eventRepository.AuditLogs);
         Assert.Equal(EventAuditAction.Deleted, eventRepository.AuditLogs[0].Action);
         Assert.Single(notifier.Notifications);
         Assert.Equal("event.deleted", notifier.Notifications[0].Type);
+    }
+
+    [Fact]
+    public async Task UpdateEventAsync_WithoutExpectedVersion_ThrowsPreconditionRequiredException()
+    {
+        var ava = TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com");
+        var itinerary = TestDataFactory.CreateItinerary("itinerary-tokyo", ava.Id);
+        itinerary.Members.Add(TestDataFactory.CreateMember(itinerary, ava));
+        var existingEvent = TestDataFactory.CreateEvent("evt-1", itinerary.Id, ava.Id, ava.Id, "Dinner");
+
+        var eventRepository = new FakeEventRepository();
+        eventRepository.Events.Add(existingEvent);
+        var service = CreateService(ava, [ava], [itinerary], [existingEvent], eventRepository);
+
+        await Assert.ThrowsAsync<PreconditionRequiredException>(() => service.UpdateEventAsync(existingEvent.Id, null, new UpdateEventRequest
+        {
+            Title = "Dinner",
+            Description = existingEvent.Description,
+            Category = existingEvent.Category,
+            Color = existingEvent.Color,
+            StartDateTime = existingEvent.StartDateTimeLocal,
+            EndDateTime = existingEvent.EndDateTimeLocal,
+            Timezone = existingEvent.Timezone,
+            Location = existingEvent.Location,
+            LocationAddress = existingEvent.LocationAddress,
+            LocationLat = existingEvent.LocationLat,
+            LocationLng = existingEvent.LocationLng,
+            Cost = existingEvent.Cost
+        }));
+    }
+
+    [Fact]
+    public async Task DeleteEventAsync_WithStaleExpectedVersion_ThrowsPreconditionFailedException()
+    {
+        var ava = TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com");
+        var itinerary = TestDataFactory.CreateItinerary("itinerary-tokyo", ava.Id);
+        itinerary.Members.Add(TestDataFactory.CreateMember(itinerary, ava));
+        var existingEvent = TestDataFactory.CreateEvent("evt-1", itinerary.Id, ava.Id, ava.Id, "Dinner");
+
+        var eventRepository = new FakeEventRepository();
+        eventRepository.Events.Add(existingEvent);
+        var service = CreateService(ava, [ava], [itinerary], [existingEvent], eventRepository);
+
+        await Assert.ThrowsAsync<PreconditionFailedException>(() => service.DeleteEventAsync(existingEvent.Id, "stale-version"));
     }
 
     private static EventService CreateService(

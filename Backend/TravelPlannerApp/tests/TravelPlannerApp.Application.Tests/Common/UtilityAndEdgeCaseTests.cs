@@ -52,7 +52,7 @@ public sealed class UtilityAndEdgeCaseTests
         userRepository.Users.Add(TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com", "XX"));
         var service = new UserService(userRepository, new FakeUnitOfWork());
 
-        var response = await service.UpdateUserAsync("user-ava", new UpdateUserRequest
+        var response = await service.UpdateUserAsync("user-ava", "user-ava-v1", new UpdateUserRequest
         {
             Name = "Ava Santos",
             Email = "ava@example.com",
@@ -199,7 +199,7 @@ public sealed class UtilityAndEdgeCaseTests
             new FakeUnitOfWork(),
             new FakeRealtimeNotifier());
 
-        await service.UpdateEventAsync(eventEntity.Id, new UpdateEventRequest
+        await service.UpdateEventAsync(eventEntity.Id, eventEntity.ConcurrencyToken, new UpdateEventRequest
         {
             Title = "Dinner at Ginza",
             Description = "Updated",

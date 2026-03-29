@@ -16,10 +16,11 @@ public static class EventEndpoints
             Results.Ok(await service.GetEventsAsync(itineraryId, cancellationToken)))
             .WithSummary("List itinerary events");
 
-        itineraryGroup.MapPost("/", async (string itineraryId, CreateEventRequest request, IEventService service, CancellationToken cancellationToken) =>
+        itineraryGroup.MapPost("/", async (string itineraryId, CreateEventRequest request, IEventService service, HttpContext httpContext, CancellationToken cancellationToken) =>
         {
             var response = await service.CreateEventAsync(itineraryId, request, cancellationToken);
-            return Results.Created($"/api/events/{response.Id}", response);
+            httpContext.Response.SetETag(response.Version);
+            return TypedResults.Created($"/api/events/{response.Id}", response);
         })
             .Validate<CreateEventRequest>()
             .WithSummary("Create event");
@@ -28,20 +29,30 @@ public static class EventEndpoints
             .WithTags("Events")
             .RequireCurrentUser();
 
-        eventGroup.MapGet("/{eventId}", async (string eventId, IEventService service, CancellationToken cancellationToken) =>
-            Results.Ok(await service.GetEventByIdAsync(eventId, cancellationToken)))
+        eventGroup.MapGet("/{eventId}", async (string eventId, IEventService service, HttpContext httpContext, CancellationToken cancellationToken) =>
+        {
+            var response = await service.GetEventByIdAsync(eventId, cancellationToken);
+            httpContext.Response.SetETag(response.Version);
+            return TypedResults.Ok(response);
+        })
             .WithSummary("Get event");
 
-        eventGroup.MapPut("/{eventId}", async (string eventId, UpdateEventRequest request, IEventService service, CancellationToken cancellationToken) =>
-            Results.Ok(await service.UpdateEventAsync(eventId, request, cancellationToken)))
+        eventGroup.MapPut("/{eventId}", async (string eventId, UpdateEventRequest request, IEventService service, HttpContext httpContext, CancellationToken cancellationToken) =>
+        {
+            var response = await service.UpdateEventAsync(eventId, httpContext.Request.GetIfMatchVersion(), request, cancellationToken);
+            httpContext.Response.SetETag(response.Version);
+            return TypedResults.Ok(response);
+        })
             .Validate<UpdateEventRequest>()
+            .RequireIfMatchHeader()
             .WithSummary("Update event");
 
-        eventGroup.MapDelete("/{eventId}", async (string eventId, IEventService service, CancellationToken cancellationToken) =>
+        eventGroup.MapDelete("/{eventId}", async (string eventId, IEventService service, HttpContext httpContext, CancellationToken cancellationToken) =>
         {
-            await service.DeleteEventAsync(eventId, cancellationToken);
+            await service.DeleteEventAsync(eventId, httpContext.Request.GetIfMatchVersion(), cancellationToken);
             return Results.NoContent();
         })
+            .RequireIfMatchHeader()
             .WithSummary("Delete event");
 
         return builder;

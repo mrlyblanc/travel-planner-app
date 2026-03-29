@@ -172,6 +172,7 @@ internal static class TestDataFactory
         return new User
         {
             Id = id,
+            ConcurrencyToken = $"{id}-v1",
             Name = name,
             Email = email,
             Avatar = avatar,
@@ -189,6 +190,7 @@ internal static class TestDataFactory
         return new Itinerary
         {
             Id = id,
+            ConcurrencyToken = $"{id}-v1",
             Title = title,
             Destination = "Tokyo",
             Description = "Test itinerary",
@@ -222,6 +224,7 @@ internal static class TestDataFactory
         return new Event
         {
             Id = id,
+            ConcurrencyToken = $"{id}-v1",
             ItineraryId = itineraryId,
             Title = title,
             Description = "Test event",

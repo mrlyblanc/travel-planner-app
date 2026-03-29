@@ -2,6 +2,7 @@ namespace TravelPlannerApp.Application.Contracts.Itineraries;
 
 public sealed record ItineraryResponse(
     string Id,
+    string Version,
     string Title,
     string? Description,
     string Destination,

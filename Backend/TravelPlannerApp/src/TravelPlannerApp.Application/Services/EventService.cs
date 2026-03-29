@@ -69,6 +69,7 @@ public sealed class EventService : IEventService
         var eventEntity = new Event
         {
             Id = IdGenerator.New("evt"),
+            ConcurrencyToken = ConcurrencyTokenHelper.NewToken(),
             ItineraryId = itineraryId,
             Title = request.Title.Trim(),
             Description = request.Description?.Trim(),
@@ -102,13 +103,14 @@ public sealed class EventService : IEventService
         return eventEntity.ToResponse();
     }
 
-    public async Task<EventResponse> UpdateEventAsync(string eventId, UpdateEventRequest request, CancellationToken cancellationToken = default)
+    public async Task<EventResponse> UpdateEventAsync(string eventId, string? expectedVersion, UpdateEventRequest request, CancellationToken cancellationToken = default)
     {
         var currentUser = await GetCurrentUserAsync(cancellationToken);
         var eventEntity = await _eventRepository.GetByIdAsync(eventId, cancellationToken)
             ?? throw new NotFoundException($"Event '{eventId}' was not found.");
 
         await EnsureItineraryAccessAsync(eventEntity.ItineraryId, currentUser.Id, cancellationToken);
+        ConcurrencyTokenHelper.EnsureMatches(eventEntity.ConcurrencyToken, expectedVersion);
         TimeZoneHelper.EnsureExists(request.Timezone);
 
         var summary = BuildUpdateSummary(eventEntity, request);
@@ -124,6 +126,7 @@ public sealed class EventService : IEventService
         eventEntity.LocationLat = request.LocationLat;
         eventEntity.LocationLng = request.LocationLng;
         eventEntity.Cost = request.Cost;
+        eventEntity.ConcurrencyToken = ConcurrencyTokenHelper.NewToken();
         eventEntity.UpdatedById = currentUser.Id;
         eventEntity.UpdatedAtUtc = DateTime.UtcNow;
 
@@ -140,13 +143,14 @@ public sealed class EventService : IEventService
         return eventEntity.ToResponse();
     }
 
-    public async Task DeleteEventAsync(string eventId, CancellationToken cancellationToken = default)
+    public async Task DeleteEventAsync(string eventId, string? expectedVersion, CancellationToken cancellationToken = default)
     {
         var currentUser = await GetCurrentUserAsync(cancellationToken);
         var eventEntity = await _eventRepository.GetByIdAsync(eventId, cancellationToken)
             ?? throw new NotFoundException($"Event '{eventId}' was not found.");
 
         await EnsureItineraryAccessAsync(eventEntity.ItineraryId, currentUser.Id, cancellationToken);
+        ConcurrencyTokenHelper.EnsureMatches(eventEntity.ConcurrencyToken, expectedVersion);
 
         var deletedAt = DateTime.UtcNow;
         eventEntity.UpdatedById = currentUser.Id;

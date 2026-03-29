@@ -4,6 +4,7 @@ namespace TravelPlannerApp.Application.Contracts.Events;
 
 public sealed record EventResponse(
     string Id,
+    string Version,
     string ItineraryId,
     string Title,
     string? Description,

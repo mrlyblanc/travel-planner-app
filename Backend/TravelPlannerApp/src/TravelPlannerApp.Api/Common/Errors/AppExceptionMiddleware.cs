@@ -21,11 +21,21 @@ public sealed class AppExceptionMiddleware
         }
         catch (AppException exception)
         {
+            _logger.LogWarning(
+                "Application error {StatusCode} for {Method} {Path}: {Message}",
+                exception.StatusCode,
+                context.Request.Method,
+                context.Request.Path,
+                exception.Message);
             await WriteProblemAsync(context, exception.StatusCode, TitleFor(exception.StatusCode), exception.Message);
         }
         catch (Exception exception)
         {
-            _logger.LogError(exception, "Unhandled exception.");
+            _logger.LogError(
+                exception,
+                "Unhandled exception for {Method} {Path}",
+                context.Request.Method,
+                context.Request.Path);
             await WriteProblemAsync(context, 500, "Internal Server Error", "An unexpected error occurred.");
         }
     }
@@ -51,6 +61,8 @@ public sealed class AppExceptionMiddleware
             403 => "Forbidden",
             404 => "Not Found",
             409 => "Conflict",
+            412 => "Precondition Failed",
+            428 => "Precondition Required",
             _ => "Error"
         };
     }

@@ -3,6 +3,7 @@ namespace TravelPlannerApp.Domain.Entities;
 public sealed class Itinerary
 {
     public string Id { get; set; } = string.Empty;
+    public string ConcurrencyToken { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
     public string Destination { get; set; } = string.Empty;

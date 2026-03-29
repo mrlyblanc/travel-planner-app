@@ -1,4 +1,5 @@
 using TravelPlannerApp.Application.Common.Exceptions;
+using TravelPlannerApp.Application.Common.Utilities;
 using TravelPlannerApp.Application.Contracts.Users;
 using TravelPlannerApp.Application.Services;
 using TravelPlannerApp.Application.Tests.Support;
@@ -50,6 +51,7 @@ public sealed class UserServiceTests
 
         Assert.Equal("ava.santos@example.com", response.Email);
         Assert.Equal("AS", response.Avatar);
+        Assert.False(string.IsNullOrWhiteSpace(response.Version));
         Assert.Single(userRepository.Users);
         Assert.Equal(1, unitOfWork.SaveChangesCalls);
     }
@@ -66,12 +68,42 @@ public sealed class UserServiceTests
 
         var service = new UserService(userRepository, new FakeUnitOfWork());
 
-        var action = () => service.UpdateUserAsync("user-luca", new UpdateUserRequest
+        var action = () => service.UpdateUserAsync("user-luca", "user-luca-v1", new UpdateUserRequest
         {
             Name = "Luca Reyes",
             Email = "ava@example.com"
         });
 
         await Assert.ThrowsAsync<ConflictException>(action);
+    }
+
+    [Fact]
+    public async Task UpdateUserAsync_WithoutExpectedVersion_ThrowsPreconditionRequiredException()
+    {
+        var userRepository = new FakeUserRepository();
+        userRepository.Users.Add(TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com"));
+
+        var service = new UserService(userRepository, new FakeUnitOfWork());
+
+        await Assert.ThrowsAsync<PreconditionRequiredException>(() => service.UpdateUserAsync("user-ava", null, new UpdateUserRequest
+        {
+            Name = "Ava Santos",
+            Email = "ava@example.com"
+        }));
+    }
+
+    [Fact]
+    public async Task UpdateUserAsync_WithStaleExpectedVersion_ThrowsPreconditionFailedException()
+    {
+        var userRepository = new FakeUserRepository();
+        userRepository.Users.Add(TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com"));
+
+        var service = new UserService(userRepository, new FakeUnitOfWork());
+
+        await Assert.ThrowsAsync<PreconditionFailedException>(() => service.UpdateUserAsync("user-ava", ConcurrencyTokenHelper.ToETag("stale-version"), new UpdateUserRequest
+        {
+            Name = "Ava Santos",
+            Email = "ava@example.com"
+        }));
     }
 }

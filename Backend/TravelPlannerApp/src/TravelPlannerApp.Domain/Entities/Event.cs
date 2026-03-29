@@ -5,6 +5,7 @@ namespace TravelPlannerApp.Domain.Entities;
 public sealed class Event
 {
     public string Id { get; set; } = string.Empty;
+    public string ConcurrencyToken { get; set; } = string.Empty;
     public string ItineraryId { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
