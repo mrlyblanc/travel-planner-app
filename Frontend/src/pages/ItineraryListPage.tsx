@@ -19,7 +19,7 @@ export const ItineraryListPage = () => {
   const users = useTravelStore((state) => state.users);
   const events = useTravelStore((state) => state.events);
   const createItinerary = useTravelStore((state) => state.createItinerary);
-  const seedDemoData = useTravelStore((state) => state.seedDemoData);
+  const refreshAll = useTravelStore((state) => state.refreshAll);
   const [dialogOpen, setDialogOpen] = useState(false);
   const itineraries = useMemo(
     () => [...rawItineraries].sort((left, right) => left.startDate.localeCompare(right.startDate)),
@@ -30,8 +30,8 @@ export const ItineraryListPage = () => {
   const totalCost = useMemo(() => getTotalCost(events), [events]);
   const nextTrip = itineraries[0];
 
-  const handleCreateItinerary = (values: ItineraryInput) => {
-    const itineraryId = createItinerary(values);
+  const handleCreateItinerary = async (values: ItineraryInput) => {
+    const itineraryId = await createItinerary(values);
     setDialogOpen(false);
     showToast('Itinerary created');
     navigate(`/itineraries/${itineraryId}`);
@@ -44,8 +44,8 @@ export const ItineraryListPage = () => {
           <Box maxWidth={720}>
             <Typography variant="h3">Plan travel like a shared calendar.</Typography>
             <HeroSupportingCopy mt={1.5}>
-              Seeded demo data, persistent localStorage, and a Google Calendar-inspired workflow for collaborative trip
-              planning. Everything stays frontend-only and runnable right away.
+              Real backend data, seeded itineraries, and a Google Calendar-inspired workflow for collaborative trip
+              planning. The same polished UI now syncs with the ASP.NET API in real time.
             </HeroSupportingCopy>
             {nextTrip ? (
               <HeroNextTrip mt={2.5} variant="body2">
@@ -57,13 +57,10 @@ export const ItineraryListPage = () => {
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
             <HeroGhostButton
               color="inherit"
-              onClick={() => {
-                seedDemoData();
-                showToast('Demo data reset');
-              }}
+              onClick={() => void refreshAll().then(() => showToast('Backend data synced'))}
               startIcon={<RefreshCw size={16} />}
             >
-              Reset demo data
+              Sync backend data
             </HeroGhostButton>
             <HeroPrimaryButton onClick={() => setDialogOpen(true)} variant="contained">
               Create itinerary

@@ -1,4 +1,4 @@
-import { Menu, MoonStar, SunMedium } from 'lucide-react';
+import { LogOut, Menu, MoonStar, SunMedium } from 'lucide-react';
 import {
   AppBar,
   Avatar,
@@ -13,8 +13,10 @@ import {
   useTheme,
 } from '@mui/material';
 import { useMemo, useState } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useNavigate } from 'react-router-dom';
 import { alpha } from '@mui/material/styles';
+import { useToast } from '../../app/providers/ToastProvider';
+import { useTravelStore } from '../../app/store/useTravelStore';
 import { useThemeMode } from '../../app/providers/ThemeModeProvider';
 import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { SidebarContent } from './SidebarContent';
@@ -25,13 +27,29 @@ export const AppShell = () => {
   const theme = useTheme();
   const isDesktop = useMediaQuery(theme.breakpoints.up('lg'));
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const currentUser = useCurrentUser();
   const { mode, toggleMode } = useThemeMode();
+  const logout = useTravelStore((state) => state.logout);
+  const { showToast } = useToast();
+  const navigate = useNavigate();
 
   const drawerContent = useMemo(
     () => <SidebarContent onNavigate={() => setMobileOpen(false)} />,
     [],
   );
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+
+    try {
+      await logout();
+      showToast('Signed out');
+      navigate('/login', { replace: true });
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
@@ -57,7 +75,7 @@ export const AppShell = () => {
           <Box sx={{ flexGrow: 1 }}>
             <Typography variant="h6">Travel itinerary workspace</Typography>
             <Typography color="text.secondary" variant="body2">
-              Plan trips like a shared calendar, without the backend overhead.
+              Plan trips like a shared calendar, now synced with the backend.
             </Typography>
           </Box>
 
@@ -72,6 +90,21 @@ export const AppShell = () => {
               >
                 {mode === 'light' ? <MoonStar size={18} /> : <SunMedium size={18} />}
               </IconButton>
+            </Tooltip>
+
+            <Tooltip title="Sign out">
+              <span>
+                <IconButton
+                  disabled={isLoggingOut}
+                  onClick={() => void handleLogout()}
+                  sx={{
+                    bgcolor: alpha(theme.palette.primary.main, mode === 'light' ? 0.08 : 0.14),
+                    color: theme.palette.text.primary,
+                  }}
+                >
+                  <LogOut size={18} />
+                </IconButton>
+              </span>
             </Tooltip>
 
             {currentUser ? (

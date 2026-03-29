@@ -21,6 +21,7 @@ interface MockEventInput {
 
 const buildEvent = (input: MockEventInput): ItineraryEvent => ({
   id: input.id,
+  version: `${input.id}-v1`,
   itineraryId: input.itineraryId,
   title: input.title,
   description: input.description,

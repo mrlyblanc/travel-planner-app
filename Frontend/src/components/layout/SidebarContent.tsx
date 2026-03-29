@@ -121,7 +121,7 @@ export const SidebarContent = ({ onNavigate }: SidebarContentProps) => {
             <Stack alignItems="center" direction="row" spacing={0.8}>
               <Globe2 size={14} />
               <Typography color="text.secondary" variant="body2">
-                Mock current traveler
+                Backend-authenticated traveler
               </Typography>
             </Stack>
           </Box>

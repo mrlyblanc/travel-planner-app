@@ -54,6 +54,9 @@ export const ItineraryDetailsPage = () => {
   const updateEvent = useTravelStore((state) => state.updateEvent);
   const deleteEvent = useTravelStore((state) => state.deleteEvent);
   const rescheduleEvent = useTravelStore((state) => state.rescheduleEvent);
+  const loadEventHistory = useTravelStore((state) => state.loadEventHistory);
+  const eventHistory = useTravelStore((state) => state.eventHistory);
+  const searchUsers = useTravelStore((state) => state.searchUsers);
   const usersMap = useMemo(() => getUserMap(users), [users]);
   const itinerary = useMemo(
     () => itineraries.find((entry) => entry.id === itineraryId),
@@ -81,6 +84,7 @@ export const ItineraryDetailsPage = () => {
   const canManage = itinerary.memberIds.includes(currentUserId);
   const selectedEvent = selectedEventId ? events.find((event) => event.id === selectedEventId) ?? null : null;
   const members = itinerary.memberIds.map((memberId) => usersMap[memberId]).filter(Boolean);
+  const selectedEventHistory = selectedEvent ? eventHistory[selectedEvent.id] ?? [] : [];
 
   const openCreateEvent = (selection?: { start: string; end: string }) => {
     setSelectedEventId(null);
@@ -93,12 +97,12 @@ export const ItineraryDetailsPage = () => {
     setEventDrawerOpen(true);
   };
 
-  const handleEventSave = (values: EventInput, eventId?: string) => {
+  const handleEventSave = async (values: EventInput, eventId?: string) => {
     if (eventId) {
-      updateEvent(eventId, values);
+      await updateEvent(eventId, values);
       showToast('Event updated');
     } else {
-      createEvent(itinerary.id, values);
+      await createEvent(itinerary.id, values);
       showToast('Event created');
     }
 
@@ -107,8 +111,8 @@ export const ItineraryDetailsPage = () => {
     setDraftRange(null);
   };
 
-  const handleDeleteEvent = (eventId: string) => {
-    deleteEvent(eventId);
+  const handleDeleteEvent = async (eventId: string) => {
+    await deleteEvent(eventId);
     setEventDrawerOpen(false);
     setSelectedEventId(null);
     setDraftRange(null);
@@ -246,13 +250,13 @@ export const ItineraryDetailsPage = () => {
                 events={events}
                 onRangeChange={setRangeLabel}
                 onReschedule={(eventId, start, end) => {
-                  rescheduleEvent(eventId, start, end);
-                  showToast('Event rescheduled');
+                  void rescheduleEvent(eventId, start, end).then(() => showToast('Event rescheduled'));
                 }}
                 onSelectEvent={(event) => {
                   setSelectedEventId(event.id);
                   setDraftRange(null);
                   setEventDrawerOpen(true);
+                  void loadEventHistory(event.id);
                 }}
                 onSelectSlot={(selection) => openCreateEvent(selection)}
                 onViewChange={setActiveView}
@@ -271,6 +275,7 @@ export const ItineraryDetailsPage = () => {
                 setSelectedEventId(event.id);
                 setDraftRange(null);
                 setEventDrawerOpen(true);
+                void loadEventHistory(event.id);
               }}
               usersMap={usersMap}
             />
@@ -287,8 +292,8 @@ export const ItineraryDetailsPage = () => {
           endDate: itinerary.endDate,
         }}
         onClose={() => setEditDialogOpen(false)}
-        onSubmit={(values: ItineraryInput) => {
-          updateItinerary(itinerary.id, values);
+        onSubmit={async (values: ItineraryInput) => {
+          await updateItinerary(itinerary.id, values);
           setEditDialogOpen(false);
           showToast('Itinerary updated');
         }}
@@ -299,8 +304,9 @@ export const ItineraryDetailsPage = () => {
       <ShareItineraryDialog
         itinerary={itinerary}
         onClose={() => setShareDialogOpen(false)}
-        onSubmit={(memberIds) => {
-          shareItinerary(itinerary.id, memberIds);
+        onSearchUsers={searchUsers}
+        onSubmit={async (memberIds) => {
+          await shareItinerary(itinerary.id, memberIds);
           setShareDialogOpen(false);
           showToast('Itinerary members updated');
         }}
@@ -310,9 +316,11 @@ export const ItineraryDetailsPage = () => {
 
       <EventDrawer
         canManage={canManage}
+        auditHistory={selectedEventHistory}
         draftRange={draftRange}
         event={selectedEvent}
         itinerary={itinerary}
+        onLoadHistory={loadEventHistory}
         onClose={() => {
           setEventDrawerOpen(false);
           setSelectedEventId(null);

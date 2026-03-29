@@ -26,7 +26,7 @@ import type { EventInput } from '../../app/store/useTravelStore';
 import { searchMockLocations } from '../../features/events/placeAutocomplete';
 import { dayjs, formatDateTime } from '../../lib/date';
 import { eventCategoryOptions, eventColorPalette, getDefaultEventColor, getEventTextColor, timezoneOptions } from '../../lib/events';
-import type { ItineraryEvent, LocationSuggestion } from '../../types/event';
+import type { EventAuditLog, ItineraryEvent, LocationSuggestion } from '../../types/event';
 import type { Itinerary } from '../../types/itinerary';
 import type { User } from '../../types/user';
 import { EventCategoryChip } from './EventCategoryChip';
@@ -35,9 +35,11 @@ interface EventDrawerProps {
   open: boolean;
   itinerary: Itinerary;
   event: ItineraryEvent | null;
+  auditHistory: EventAuditLog[];
   draftRange: { start: string; end: string } | null;
   usersMap: Record<string, User>;
   canManage: boolean;
+  onLoadHistory: (eventId: string) => Promise<void>;
   onClose: () => void;
   onSave: (input: EventInput, eventId?: string) => void;
   onDelete: (eventId: string) => void;
@@ -135,9 +137,11 @@ export const EventDrawer = ({
   open,
   itinerary,
   event,
+  auditHistory,
   draftRange,
   usersMap,
   canManage,
+  onLoadHistory,
   onClose,
   onSave,
   onDelete,
@@ -179,6 +183,14 @@ export const EventDrawer = ({
       return () => subscription.unsubscribe();
     }
   }, [event, setValue, watch]);
+
+  useEffect(() => {
+    if (!open || !event) {
+      return;
+    }
+
+    void onLoadHistory(event.id);
+  }, [event, onLoadHistory, open]);
 
   useEffect(() => {
     if (!open) {
@@ -552,6 +564,30 @@ export const EventDrawer = ({
                     {event.locationAddress || event.location}
                   </Typography>
                 </Stack>
+
+                {auditHistory.length > 0 ? (
+                  <Stack spacing={1}>
+                    <Typography fontWeight={600} mt={0.8} variant="body2">
+                      Audit history
+                    </Typography>
+                    {auditHistory.slice(0, 4).map((historyItem) => (
+                      <Box
+                        key={historyItem.id}
+                        sx={{
+                          border: `1px solid ${theme.palette.divider}`,
+                          borderRadius: theme.app.radius.md,
+                          px: 1.5,
+                          py: 1.2,
+                        }}
+                      >
+                        <Typography variant="body2">{historyItem.summary}</Typography>
+                        <Typography color="text.secondary" variant="caption">
+                          {usersMap[historyItem.changedBy]?.name ?? 'Unknown'} • {formatDateTime(historyItem.changedAt)}
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Stack>
+                ) : null}
               </Stack>
             </>
           ) : null}

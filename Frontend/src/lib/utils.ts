@@ -12,3 +12,12 @@ export const currencyFormatter = new Intl.NumberFormat('en-US', {
 });
 
 export const clampNumber = (value: number, min = 0) => Math.max(min, value);
+
+export const initialsFromName = (value: string) =>
+  value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('');

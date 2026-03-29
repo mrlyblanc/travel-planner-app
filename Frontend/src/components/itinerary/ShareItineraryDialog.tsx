@@ -22,6 +22,7 @@ interface ShareItineraryDialogProps {
   users: User[];
   open: boolean;
   onClose: () => void;
+  onSearchUsers: (query: string) => Promise<User[]>;
   onSubmit: (memberIds: string[]) => void;
 }
 
@@ -30,9 +31,11 @@ export const ShareItineraryDialog = ({
   users,
   open,
   onClose,
+  onSearchUsers,
   onSubmit,
 }: ShareItineraryDialogProps) => {
   const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
+  const [searchResults, setSearchResults] = useState<User[]>([]);
 
   const existingMembers = useMemo(
     () => users.filter((user) => itinerary.memberIds.includes(user.id)),
@@ -45,7 +48,8 @@ export const ShareItineraryDialog = ({
 
   useEffect(() => {
     setSelectedUsers([]);
-  }, [open, itinerary.id]);
+    setSearchResults(availableUsers);
+  }, [availableUsers, open, itinerary.id]);
 
   return (
     <Dialog fullWidth maxWidth="sm" onClose={onClose} open={open}>
@@ -72,8 +76,23 @@ export const ShareItineraryDialog = ({
             multiple
             getOptionLabel={(option) => `${option.name} (${option.email})`}
             onChange={(_, value) => setSelectedUsers(value)}
-            options={availableUsers}
-            renderInput={(params) => <TextField {...params} label="Add travelers" placeholder="Search mock users" />}
+            onInputChange={(_, value, reason) => {
+              if (reason === 'reset') {
+                return;
+              }
+
+              const trimmedValue = value.trim();
+              if (trimmedValue.length < 2) {
+                setSearchResults(availableUsers);
+                return;
+              }
+
+              void onSearchUsers(trimmedValue).then((results) => {
+                setSearchResults(results.filter((user) => !itinerary.memberIds.includes(user.id)));
+              });
+            }}
+            options={searchResults}
+            renderInput={(params) => <TextField {...params} label="Add travelers" placeholder="Search travelers" />}
             renderOption={(props, option) => (
               <Box component="li" {...props}>
                 <Stack alignItems="center" direction="row" spacing={1.2}>
