@@ -2,6 +2,8 @@ using Asp.Versioning;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -14,6 +16,7 @@ using TravelPlannerApp.Api.Common.Swagger;
 using TravelPlannerApp.Api.Common.Versioning;
 using TravelPlannerApp.Api.Realtime;
 using TravelPlannerApp.Application.Abstractions.CurrentUser;
+using TravelPlannerApp.Application.Abstractions.Persistence;
 using TravelPlannerApp.Application.Abstractions.Realtime;
 using TravelPlannerApp.Application.Abstractions.Security;
 
@@ -74,6 +77,26 @@ public static class ServiceCollectionExtensions
                         }
 
                         return Task.CompletedTask;
+                    },
+                    OnTokenValidated = async context =>
+                    {
+                        var principal = context.Principal;
+                        var userId = principal?.FindFirstValue(ClaimTypes.NameIdentifier)
+                            ?? principal?.FindFirstValue(JwtRegisteredClaimNames.Sub);
+                        var tokenAuthVersion = principal?.FindFirstValue(JwtClaimTypes.AuthVersion);
+
+                        if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(tokenAuthVersion))
+                        {
+                            context.Fail("Token is missing required claims.");
+                            return;
+                        }
+
+                        var userRepository = context.HttpContext.RequestServices.GetRequiredService<IUserRepository>();
+                        var user = await userRepository.GetByIdAsync(userId, context.HttpContext.RequestAborted);
+                        if (user is null || !string.Equals(user.AuthVersion, tokenAuthVersion, StringComparison.Ordinal))
+                        {
+                            context.Fail("Token is no longer valid.");
+                        }
                     },
                     OnChallenge = context =>
                     {
@@ -185,6 +208,11 @@ public static class ServiceCollectionExtensions
         if (jwtOptions.TokenLifetimeMinutes <= 0)
         {
             throw new InvalidOperationException("Jwt:TokenLifetimeMinutes must be greater than zero.");
+        }
+
+        if (jwtOptions.RefreshTokenLifetimeDays <= 0)
+        {
+            throw new InvalidOperationException("Jwt:RefreshTokenLifetimeDays must be greater than zero.");
         }
 
         return jwtOptions;

@@ -1,4 +1,5 @@
 using TravelPlannerApp.Application.Common.Exceptions;
+using TravelPlannerApp.Application.Abstractions.Security;
 using TravelPlannerApp.Application.Contracts.Auth;
 using TravelPlannerApp.Application.Services;
 using TravelPlannerApp.Application.Tests.Support;
@@ -12,12 +13,18 @@ public sealed class AuthServiceTests
     {
         var userRepository = new FakeUserRepository();
         userRepository.Users.Add(TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com"));
+        var refreshTokenRepository = new FakeRefreshTokenRepository();
 
         var service = new AuthService(
             new FakeCurrentUserAccessor(),
             userRepository,
             new FakePasswordHasher(),
-            new FakeJwtTokenGenerator());
+            new FakeJwtTokenGenerator(),
+            new FakeRefreshTokenGenerator(),
+            refreshTokenRepository,
+            new FakeUnitOfWork(),
+            new JwtOptions { Issuer = "tests", Audience = "tests", Secret = "12345678901234567890123456789012", RefreshTokenLifetimeDays = 14 },
+            TimeProvider.System);
 
         var response = await service.LoginAsync(new LoginRequest
         {
@@ -25,8 +32,10 @@ public sealed class AuthServiceTests
             Password = "Pass12345!"
         });
 
-        Assert.Equal("token-for-user-ava", response.AccessToken);
+        Assert.Equal("token-for-user-ava-user-ava-auth-v1", response.AccessToken);
+        Assert.Equal("refresh-token-01-abcdefghijklmnopqrstuvwxyz0123456789", response.RefreshToken);
         Assert.Equal("user-ava", response.User.Id);
+        Assert.Single(refreshTokenRepository.RefreshTokens);
     }
 
     [Fact]
@@ -39,7 +48,12 @@ public sealed class AuthServiceTests
             new FakeCurrentUserAccessor(),
             userRepository,
             new FakePasswordHasher(),
-            new FakeJwtTokenGenerator());
+            new FakeJwtTokenGenerator(),
+            new FakeRefreshTokenGenerator(),
+            new FakeRefreshTokenRepository(),
+            new FakeUnitOfWork(),
+            new JwtOptions { Issuer = "tests", Audience = "tests", Secret = "12345678901234567890123456789012", RefreshTokenLifetimeDays = 14 },
+            TimeProvider.System);
 
         await Assert.ThrowsAsync<UnauthorizedException>(() => service.LoginAsync(new LoginRequest
         {
@@ -55,8 +69,212 @@ public sealed class AuthServiceTests
             new FakeCurrentUserAccessor(),
             new FakeUserRepository(),
             new FakePasswordHasher(),
-            new FakeJwtTokenGenerator());
+            new FakeJwtTokenGenerator(),
+            new FakeRefreshTokenGenerator(),
+            new FakeRefreshTokenRepository(),
+            new FakeUnitOfWork(),
+            new JwtOptions { Issuer = "tests", Audience = "tests", Secret = "12345678901234567890123456789012", RefreshTokenLifetimeDays = 14 },
+            TimeProvider.System);
 
         await Assert.ThrowsAsync<UnauthorizedException>(() => service.GetCurrentUserAsync());
+    }
+
+    [Fact]
+    public async Task RefreshAsync_WithActiveRefreshToken_RotatesRefreshToken()
+    {
+        var userRepository = new FakeUserRepository();
+        var user = TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com");
+        userRepository.Users.Add(user);
+        var refreshTokenRepository = new FakeRefreshTokenRepository();
+        refreshTokenRepository.RefreshTokens.Add(new TravelPlannerApp.Domain.Entities.RefreshToken
+        {
+            Id = "rtk-1",
+            UserId = user.Id,
+            TokenHash = "hash::existing-refresh-token-abcdefghijklmnopqrstuvwxyz0123456789",
+            CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            ExpiresAtUtc = new DateTime(2026, 1, 15, 0, 0, 0, DateTimeKind.Utc),
+            User = user
+        });
+
+        var service = new AuthService(
+            new FakeCurrentUserAccessor(),
+            userRepository,
+            new FakePasswordHasher(),
+            new FakeJwtTokenGenerator(),
+            new FakeRefreshTokenGenerator(),
+            refreshTokenRepository,
+            new FakeUnitOfWork(),
+            new JwtOptions { Issuer = "tests", Audience = "tests", Secret = "12345678901234567890123456789012", RefreshTokenLifetimeDays = 14 },
+            new FakeTimeProvider(new DateTimeOffset(2026, 1, 2, 0, 0, 0, TimeSpan.Zero)));
+
+        var response = await service.RefreshAsync(new RefreshTokenRequest
+        {
+            RefreshToken = "existing-refresh-token-abcdefghijklmnopqrstuvwxyz0123456789"
+        });
+
+        Assert.Equal("token-for-user-ava-user-ava-auth-v1", response.AccessToken);
+        Assert.Equal("refresh-token-01-abcdefghijklmnopqrstuvwxyz0123456789", response.RefreshToken);
+        Assert.NotNull(refreshTokenRepository.RefreshTokens[0].RevokedAtUtc);
+        Assert.Equal(2, refreshTokenRepository.RefreshTokens.Count);
+    }
+
+    [Fact]
+    public async Task RefreshAsync_WithRevokedRefreshToken_ThrowsUnauthorizedException()
+    {
+        var userRepository = new FakeUserRepository();
+        var user = TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com");
+        userRepository.Users.Add(user);
+        var refreshTokenRepository = new FakeRefreshTokenRepository();
+        refreshTokenRepository.RefreshTokens.Add(new TravelPlannerApp.Domain.Entities.RefreshToken
+        {
+            Id = "rtk-1",
+            UserId = user.Id,
+            TokenHash = "hash::existing-refresh-token-abcdefghijklmnopqrstuvwxyz0123456789",
+            CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            ExpiresAtUtc = new DateTime(2026, 1, 15, 0, 0, 0, DateTimeKind.Utc),
+            RevokedAtUtc = new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc),
+            User = user
+        });
+
+        var service = new AuthService(
+            new FakeCurrentUserAccessor(),
+            userRepository,
+            new FakePasswordHasher(),
+            new FakeJwtTokenGenerator(),
+            new FakeRefreshTokenGenerator(),
+            refreshTokenRepository,
+            new FakeUnitOfWork(),
+            new JwtOptions { Issuer = "tests", Audience = "tests", Secret = "12345678901234567890123456789012", RefreshTokenLifetimeDays = 14 },
+            new FakeTimeProvider(new DateTimeOffset(2026, 1, 3, 0, 0, 0, TimeSpan.Zero)));
+
+        await Assert.ThrowsAsync<UnauthorizedException>(() => service.RefreshAsync(new RefreshTokenRequest
+        {
+            RefreshToken = "existing-refresh-token-abcdefghijklmnopqrstuvwxyz0123456789"
+        }));
+    }
+
+    [Fact]
+    public async Task LogoutAsync_WithActiveRefreshToken_RevokesToken()
+    {
+        var refreshTokenRepository = new FakeRefreshTokenRepository();
+        refreshTokenRepository.RefreshTokens.Add(new TravelPlannerApp.Domain.Entities.RefreshToken
+        {
+            Id = "rtk-1",
+            UserId = "user-ava",
+            TokenHash = "hash::refresh-token-01-abcdefghijklmnopqrstuvwxyz0123456789",
+            CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            ExpiresAtUtc = new DateTime(2026, 1, 15, 0, 0, 0, DateTimeKind.Utc)
+        });
+
+        var service = new AuthService(
+            new FakeCurrentUserAccessor(),
+            new FakeUserRepository(),
+            new FakePasswordHasher(),
+            new FakeJwtTokenGenerator(),
+            new FakeRefreshTokenGenerator(),
+            refreshTokenRepository,
+            new FakeUnitOfWork(),
+            new JwtOptions { Issuer = "tests", Audience = "tests", Secret = "12345678901234567890123456789012", RefreshTokenLifetimeDays = 14 },
+            new FakeTimeProvider(new DateTimeOffset(2026, 1, 3, 0, 0, 0, TimeSpan.Zero)));
+
+        await service.LogoutAsync(new RefreshTokenRequest
+        {
+            RefreshToken = "refresh-token-01-abcdefghijklmnopqrstuvwxyz0123456789"
+        });
+
+        Assert.NotNull(refreshTokenRepository.RefreshTokens[0].RevokedAtUtc);
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_WithValidCurrentPassword_UpdatesPasswordRotatesAuthVersionAndRevokesExistingRefreshTokens()
+    {
+        var userRepository = new FakeUserRepository();
+        var user = TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com");
+        var originalAuthVersion = user.AuthVersion;
+        userRepository.Users.Add(user);
+        var refreshTokenRepository = new FakeRefreshTokenRepository();
+        refreshTokenRepository.RefreshTokens.Add(new TravelPlannerApp.Domain.Entities.RefreshToken
+        {
+            Id = "rtk-1",
+            UserId = user.Id,
+            TokenHash = "hash::existing-refresh-token-abcdefghijklmnopqrstuvwxyz0123456789",
+            CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            ExpiresAtUtc = new DateTime(2026, 1, 15, 0, 0, 0, DateTimeKind.Utc)
+        });
+
+        var service = new AuthService(
+            new FakeCurrentUserAccessor { CurrentUserId = user.Id },
+            userRepository,
+            new FakePasswordHasher(),
+            new FakeJwtTokenGenerator(),
+            new FakeRefreshTokenGenerator(),
+            refreshTokenRepository,
+            new FakeUnitOfWork(),
+            new JwtOptions { Issuer = "tests", Audience = "tests", Secret = "12345678901234567890123456789012", RefreshTokenLifetimeDays = 14 },
+            new FakeTimeProvider(new DateTimeOffset(2026, 1, 4, 0, 0, 0, TimeSpan.Zero)));
+
+        await service.ChangePasswordAsync(new ChangePasswordRequest
+        {
+            CurrentPassword = "Pass12345!",
+            NewPassword = "NewPass123!",
+            ConfirmNewPassword = "NewPass123!"
+        });
+
+        Assert.Equal("hashed::NewPass123!", user.PasswordHash);
+        Assert.NotEqual(originalAuthVersion, user.AuthVersion);
+        Assert.NotNull(refreshTokenRepository.RefreshTokens[0].RevokedAtUtc);
+        Assert.Single(refreshTokenRepository.RefreshTokens);
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_WithWrongCurrentPassword_ThrowsUnauthorizedException()
+    {
+        var userRepository = new FakeUserRepository();
+        var user = TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com");
+        userRepository.Users.Add(user);
+
+        var service = new AuthService(
+            new FakeCurrentUserAccessor { CurrentUserId = user.Id },
+            userRepository,
+            new FakePasswordHasher(),
+            new FakeJwtTokenGenerator(),
+            new FakeRefreshTokenGenerator(),
+            new FakeRefreshTokenRepository(),
+            new FakeUnitOfWork(),
+            new JwtOptions { Issuer = "tests", Audience = "tests", Secret = "12345678901234567890123456789012", RefreshTokenLifetimeDays = 14 },
+            TimeProvider.System);
+
+        await Assert.ThrowsAsync<UnauthorizedException>(() => service.ChangePasswordAsync(new ChangePasswordRequest
+        {
+            CurrentPassword = "WrongPass123!",
+            NewPassword = "NewPass123!",
+            ConfirmNewPassword = "NewPass123!"
+        }));
+    }
+
+    [Fact]
+    public async Task ChangePasswordAsync_WithSamePassword_ThrowsBadRequestException()
+    {
+        var userRepository = new FakeUserRepository();
+        var user = TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com");
+        userRepository.Users.Add(user);
+
+        var service = new AuthService(
+            new FakeCurrentUserAccessor { CurrentUserId = user.Id },
+            userRepository,
+            new FakePasswordHasher(),
+            new FakeJwtTokenGenerator(),
+            new FakeRefreshTokenGenerator(),
+            new FakeRefreshTokenRepository(),
+            new FakeUnitOfWork(),
+            new JwtOptions { Issuer = "tests", Audience = "tests", Secret = "12345678901234567890123456789012", RefreshTokenLifetimeDays = 14 },
+            TimeProvider.System);
+
+        await Assert.ThrowsAsync<BadRequestException>(() => service.ChangePasswordAsync(new ChangePasswordRequest
+        {
+            CurrentPassword = "Pass12345!",
+            NewPassword = "Pass12345!",
+            ConfirmNewPassword = "Pass12345!"
+        }));
     }
 }

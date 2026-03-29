@@ -78,6 +78,7 @@ public sealed class UserService : IUserService
         {
             Id = IdGenerator.New("user"),
             ConcurrencyToken = ConcurrencyTokenHelper.NewToken(),
+            AuthVersion = Guid.NewGuid().ToString("N"),
             Name = request.Name.Trim(),
             Email = normalizedEmail,
             PasswordHash = _passwordHasher.HashPassword(request.Password),

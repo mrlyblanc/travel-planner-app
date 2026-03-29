@@ -4,6 +4,7 @@ public sealed class User
 {
     public string Id { get; set; } = string.Empty;
     public string ConcurrencyToken { get; set; } = string.Empty;
+    public string AuthVersion { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
@@ -16,4 +17,5 @@ public sealed class User
     public ICollection<Event> CreatedEvents { get; set; } = new List<Event>();
     public ICollection<Event> UpdatedEvents { get; set; } = new List<Event>();
     public ICollection<EventAuditLog> EventAuditLogs { get; set; } = new List<EventAuditLog>();
+    public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
 }

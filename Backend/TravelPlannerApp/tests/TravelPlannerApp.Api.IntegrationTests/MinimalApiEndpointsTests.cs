@@ -50,8 +50,147 @@ public sealed class MinimalApiEndpointsTests
         var payload = await response.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions);
         Assert.NotNull(payload);
         Assert.False(string.IsNullOrWhiteSpace(payload!.AccessToken));
+        Assert.False(string.IsNullOrWhiteSpace(payload.RefreshToken));
         Assert.Equal("Bearer", payload.TokenType);
         Assert.Equal("user-ava", payload.User.Id);
+    }
+
+    [Fact]
+    public async Task Refresh_WithValidRefreshToken_ReturnsRotatedTokens()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = factory.CreateApiClient();
+
+        var loginResponse = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
+        {
+            Email = AvaEmail,
+            Password = TravelPlannerApiFactory.SeedPassword
+        }, JsonOptions);
+        loginResponse.EnsureSuccessStatusCode();
+        var loginPayload = await loginResponse.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions);
+        Assert.NotNull(loginPayload);
+
+        var refreshResponse = await client.PostAsJsonAsync("/api/auth/refresh", new RefreshTokenRequest
+        {
+            RefreshToken = loginPayload!.RefreshToken
+        }, JsonOptions);
+
+        refreshResponse.EnsureSuccessStatusCode();
+        var refreshPayload = await refreshResponse.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions);
+        Assert.NotNull(refreshPayload);
+        Assert.NotEqual(loginPayload.AccessToken, refreshPayload!.AccessToken);
+        Assert.NotEqual(loginPayload.RefreshToken, refreshPayload.RefreshToken);
+    }
+
+    [Fact]
+    public async Task Refresh_WhenReusingRefreshToken_ReturnsUnauthorized()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = factory.CreateApiClient();
+
+        var loginResponse = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
+        {
+            Email = AvaEmail,
+            Password = TravelPlannerApiFactory.SeedPassword
+        }, JsonOptions);
+        loginResponse.EnsureSuccessStatusCode();
+        var loginPayload = await loginResponse.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions);
+        Assert.NotNull(loginPayload);
+
+        var firstRefreshResponse = await client.PostAsJsonAsync("/api/auth/refresh", new RefreshTokenRequest
+        {
+            RefreshToken = loginPayload!.RefreshToken
+        }, JsonOptions);
+        firstRefreshResponse.EnsureSuccessStatusCode();
+
+        var secondRefreshResponse = await client.PostAsJsonAsync("/api/auth/refresh", new RefreshTokenRequest
+        {
+            RefreshToken = loginPayload.RefreshToken
+        }, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, secondRefreshResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task Logout_WithRefreshToken_RevokesRefreshToken()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = factory.CreateApiClient();
+
+        var loginResponse = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
+        {
+            Email = AvaEmail,
+            Password = TravelPlannerApiFactory.SeedPassword
+        }, JsonOptions);
+        loginResponse.EnsureSuccessStatusCode();
+        var loginPayload = await loginResponse.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions);
+        Assert.NotNull(loginPayload);
+
+        var logoutResponse = await client.PostAsJsonAsync("/api/auth/logout", new RefreshTokenRequest
+        {
+            RefreshToken = loginPayload!.RefreshToken
+        }, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.NoContent, logoutResponse.StatusCode);
+
+        var refreshResponse = await client.PostAsJsonAsync("/api/auth/refresh", new RefreshTokenRequest
+        {
+            RefreshToken = loginPayload.RefreshToken
+        }, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.Unauthorized, refreshResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task ChangePassword_WithValidCurrentPassword_InvalidatesOldAccessAndRefreshTokensAndRequiresRelogin()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = factory.CreateApiClient();
+
+        var loginResponse = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
+        {
+            Email = AvaEmail,
+            Password = TravelPlannerApiFactory.SeedPassword
+        }, JsonOptions);
+        loginResponse.EnsureSuccessStatusCode();
+        var loginPayload = await loginResponse.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions);
+        Assert.NotNull(loginPayload);
+
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", loginPayload!.AccessToken);
+
+        var changePasswordResponse = await client.PostAsJsonAsync("/api/auth/change-password", new ChangePasswordRequest
+        {
+            CurrentPassword = TravelPlannerApiFactory.SeedPassword,
+            NewPassword = "UpdatedPass123!",
+            ConfirmNewPassword = "UpdatedPass123!"
+        }, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.NoContent, changePasswordResponse.StatusCode);
+
+        var meResponse = await client.GetAsync("/api/auth/me");
+        Assert.Equal(HttpStatusCode.Unauthorized, meResponse.StatusCode);
+
+        client.DefaultRequestHeaders.Authorization = null;
+
+        var oldRefreshResponse = await client.PostAsJsonAsync("/api/auth/refresh", new RefreshTokenRequest
+        {
+            RefreshToken = loginPayload.RefreshToken
+        }, JsonOptions);
+        Assert.Equal(HttpStatusCode.Unauthorized, oldRefreshResponse.StatusCode);
+
+        var oldLoginResponse = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
+        {
+            Email = AvaEmail,
+            Password = TravelPlannerApiFactory.SeedPassword
+        }, JsonOptions);
+        Assert.Equal(HttpStatusCode.Unauthorized, oldLoginResponse.StatusCode);
+
+        var newLoginResponse = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
+        {
+            Email = AvaEmail,
+            Password = "UpdatedPass123!"
+        }, JsonOptions);
+        newLoginResponse.EnsureSuccessStatusCode();
     }
 
     [Fact]

@@ -29,9 +29,11 @@ public static class DependencyInjection
         });
 
         services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
         services.AddScoped<IItineraryRepository, ItineraryRepository>();
         services.AddScoped<IEventRepository, EventRepository>();
         services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
+        services.AddSingleton<IRefreshTokenGenerator, RefreshTokenGenerator>();
         services.AddSingleton<IPasswordHasher, AspNetPasswordHasher>();
         services.AddScoped<IUnitOfWork>(static serviceProvider => serviceProvider.GetRequiredService<TravelPlannerDbContext>());
         services.AddScoped<TravelPlannerDbSeeder>();
@@ -59,6 +61,7 @@ public static class DependencyInjection
         }
 
         await BackfillMissingPasswordHashesAsync(dbContext, configuration, passwordHasher, logger);
+        await BackfillMissingAuthVersionsAsync(dbContext, logger);
 
         var seeder = scope.ServiceProvider.GetRequiredService<TravelPlannerDbSeeder>();
         await seeder.SeedAsync();
@@ -120,6 +123,13 @@ public static class DependencyInjection
             BEGIN
                 ALTER TABLE [dbo].[users] ADD [PasswordHash] nvarchar(512) NOT NULL CONSTRAINT [DF_users_PasswordHash] DEFAULT '';
                 ALTER TABLE [dbo].[users] DROP CONSTRAINT [DF_users_PasswordHash];
+            END;
+
+            IF OBJECT_ID(N'[dbo].[users]', N'U') IS NOT NULL AND COL_LENGTH('dbo.users', 'AuthVersion') IS NULL
+            BEGIN
+                ALTER TABLE [dbo].[users] ADD [AuthVersion] nvarchar(40) NOT NULL CONSTRAINT [DF_users_AuthVersion] DEFAULT '';
+                UPDATE [dbo].[users] SET [AuthVersion] = LOWER(REPLACE(CONVERT(varchar(36), NEWID()), '-', '')) WHERE [AuthVersion] = '';
+                ALTER TABLE [dbo].[users] DROP CONSTRAINT [DF_users_AuthVersion];
             END;
 
             IF OBJECT_ID(N'[dbo].[itineraries]', N'U') IS NOT NULL AND COL_LENGTH('dbo.itineraries', 'ConcurrencyToken') IS NULL
@@ -237,6 +247,28 @@ public static class DependencyInjection
         foreach (var user in usersWithMissingPasswords)
         {
             user.PasswordHash = passwordHasher.HashPassword(seedPassword);
+        }
+
+        await dbContext.SaveChangesAsync();
+    }
+
+    private static async Task BackfillMissingAuthVersionsAsync(
+        TravelPlannerDbContext dbContext,
+        ILogger logger)
+    {
+        var usersWithMissingAuthVersion = await dbContext.Users
+            .Where(user => string.IsNullOrWhiteSpace(user.AuthVersion))
+            .ToListAsync();
+
+        if (usersWithMissingAuthVersion.Count == 0)
+        {
+            return;
+        }
+
+        logger.LogInformation("Backfilling auth versions for {UserCount} existing users", usersWithMissingAuthVersion.Count);
+        foreach (var user in usersWithMissingAuthVersion)
+        {
+            user.AuthVersion = Guid.NewGuid().ToString("N");
         }
 
         await dbContext.SaveChangesAsync();

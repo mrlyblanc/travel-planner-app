@@ -56,8 +56,36 @@ internal sealed class FakeJwtTokenGenerator : IJwtTokenGenerator
 {
     public TokenResult GenerateToken(User user)
     {
-        return new TokenResult($"token-for-{user.Id}", new DateTime(2026, 12, 31, 0, 0, 0, DateTimeKind.Utc));
+        return new TokenResult($"token-for-{user.Id}-{user.AuthVersion}", new DateTime(2026, 12, 31, 0, 0, 0, DateTimeKind.Utc));
     }
+}
+
+internal sealed class FakeRefreshTokenGenerator : IRefreshTokenGenerator
+{
+    private int _counter;
+
+    public string GenerateToken()
+    {
+        _counter++;
+        return $"refresh-token-{_counter:D2}-abcdefghijklmnopqrstuvwxyz0123456789";
+    }
+
+    public string HashToken(string token)
+    {
+        return $"hash::{token.Trim()}";
+    }
+}
+
+internal sealed class FakeTimeProvider : TimeProvider
+{
+    private readonly DateTimeOffset _utcNow;
+
+    public FakeTimeProvider(DateTimeOffset utcNow)
+    {
+        _utcNow = utcNow;
+    }
+
+    public override DateTimeOffset GetUtcNow() => _utcNow;
 }
 
 internal sealed class FakeUserRepository : IUserRepository
@@ -103,6 +131,27 @@ internal sealed class FakeUserRepository : IUserRepository
     public Task AddAsync(User user, CancellationToken cancellationToken = default)
     {
         Users.Add(user);
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class FakeRefreshTokenRepository : IRefreshTokenRepository
+{
+    public List<RefreshToken> RefreshTokens { get; } = [];
+
+    public Task<RefreshToken?> GetByTokenHashAsync(string tokenHash, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(RefreshTokens.FirstOrDefault(refreshToken => refreshToken.TokenHash == tokenHash));
+    }
+
+    public Task<List<RefreshToken>> ListByUserIdAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(RefreshTokens.Where(refreshToken => refreshToken.UserId == userId).ToList());
+    }
+
+    public Task AddAsync(RefreshToken refreshToken, CancellationToken cancellationToken = default)
+    {
+        RefreshTokens.Add(refreshToken);
         return Task.CompletedTask;
     }
 }
@@ -210,6 +259,7 @@ internal static class TestDataFactory
         {
             Id = id,
             ConcurrencyToken = $"{id}-v1",
+            AuthVersion = $"{id}-auth-v1",
             Name = name,
             Email = email,
             PasswordHash = "hashed::Pass12345!",

@@ -65,12 +65,12 @@ public sealed class TravelPlannerDbSeeder
 
         return
         [
-            new User { Id = "user-ava", ConcurrencyToken = "00000000000000000000000000000011", Name = "Ava Santos", Email = "ava.santos@globejet.com", PasswordHash = passwordHash, Avatar = "AS", CreatedAtUtc = createdAt },
-            new User { Id = "user-luca", ConcurrencyToken = "00000000000000000000000000000012", Name = "Luca Reyes", Email = "luca.reyes@globejet.com", PasswordHash = passwordHash, Avatar = "LR", CreatedAtUtc = createdAt.AddMinutes(2) },
-            new User { Id = "user-mina", ConcurrencyToken = "00000000000000000000000000000013", Name = "Mina Park", Email = "mina.park@globejet.com", PasswordHash = passwordHash, Avatar = "MP", CreatedAtUtc = createdAt.AddMinutes(4) },
-            new User { Id = "user-ethan", ConcurrencyToken = "00000000000000000000000000000014", Name = "Ethan Cruz", Email = "ethan.cruz@globejet.com", PasswordHash = passwordHash, Avatar = "EC", CreatedAtUtc = createdAt.AddMinutes(6) },
-            new User { Id = "user-sofia", ConcurrencyToken = "00000000000000000000000000000015", Name = "Sofia Lim", Email = "sofia.lim@globejet.com", PasswordHash = passwordHash, Avatar = "SL", CreatedAtUtc = createdAt.AddMinutes(8) },
-            new User { Id = "user-noah", ConcurrencyToken = "00000000000000000000000000000016", Name = "Noah Tan", Email = "noah.tan@globejet.com", PasswordHash = passwordHash, Avatar = "NT", CreatedAtUtc = createdAt.AddMinutes(10) }
+            new User { Id = "user-ava", ConcurrencyToken = "00000000000000000000000000000011", AuthVersion = "30000000000000000000000000000011", Name = "Ava Santos", Email = "ava.santos@globejet.com", PasswordHash = passwordHash, Avatar = "AS", CreatedAtUtc = createdAt },
+            new User { Id = "user-luca", ConcurrencyToken = "00000000000000000000000000000012", AuthVersion = "30000000000000000000000000000012", Name = "Luca Reyes", Email = "luca.reyes@globejet.com", PasswordHash = passwordHash, Avatar = "LR", CreatedAtUtc = createdAt.AddMinutes(2) },
+            new User { Id = "user-mina", ConcurrencyToken = "00000000000000000000000000000013", AuthVersion = "30000000000000000000000000000013", Name = "Mina Park", Email = "mina.park@globejet.com", PasswordHash = passwordHash, Avatar = "MP", CreatedAtUtc = createdAt.AddMinutes(4) },
+            new User { Id = "user-ethan", ConcurrencyToken = "00000000000000000000000000000014", AuthVersion = "30000000000000000000000000000014", Name = "Ethan Cruz", Email = "ethan.cruz@globejet.com", PasswordHash = passwordHash, Avatar = "EC", CreatedAtUtc = createdAt.AddMinutes(6) },
+            new User { Id = "user-sofia", ConcurrencyToken = "00000000000000000000000000000015", AuthVersion = "30000000000000000000000000000015", Name = "Sofia Lim", Email = "sofia.lim@globejet.com", PasswordHash = passwordHash, Avatar = "SL", CreatedAtUtc = createdAt.AddMinutes(8) },
+            new User { Id = "user-noah", ConcurrencyToken = "00000000000000000000000000000016", AuthVersion = "30000000000000000000000000000016", Name = "Noah Tan", Email = "noah.tan@globejet.com", PasswordHash = passwordHash, Avatar = "NT", CreatedAtUtc = createdAt.AddMinutes(10) }
         ];
     }
 

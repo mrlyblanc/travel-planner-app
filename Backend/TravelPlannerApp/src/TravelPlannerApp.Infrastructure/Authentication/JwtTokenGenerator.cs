@@ -28,8 +28,10 @@ public sealed class JwtTokenGenerator : IJwtTokenGenerator
         var claims = new Claim[]
         {
             new Claim(JwtRegisteredClaimNames.Sub, user.Id),
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("N")),
             new Claim(JwtRegisteredClaimNames.Email, user.Email),
             new Claim(JwtRegisteredClaimNames.UniqueName, user.Name),
+            new Claim(JwtClaimTypes.AuthVersion, user.AuthVersion),
             new Claim(ClaimTypes.NameIdentifier, user.Id),
             new Claim(ClaimTypes.Name, user.Name)
         };

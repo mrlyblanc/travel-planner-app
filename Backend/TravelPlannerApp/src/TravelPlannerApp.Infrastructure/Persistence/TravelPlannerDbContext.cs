@@ -12,6 +12,7 @@ public sealed class TravelPlannerDbContext : DbContext, IUnitOfWork
     }
 
     public DbSet<User> Users => Set<User>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<Itinerary> Itineraries => Set<Itinerary>();
     public DbSet<ItineraryMember> ItineraryMembers => Set<ItineraryMember>();
     public DbSet<Event> Events => Set<Event>();
@@ -39,11 +40,28 @@ public sealed class TravelPlannerDbContext : DbContext, IUnitOfWork
             entity.HasKey(user => user.Id);
             entity.Property(user => user.Id).HasMaxLength(80);
             entity.Property(user => user.ConcurrencyToken).HasMaxLength(40).IsConcurrencyToken().IsRequired();
+            entity.Property(user => user.AuthVersion).HasMaxLength(40).IsRequired();
             entity.Property(user => user.Name).HasMaxLength(120).IsRequired();
             entity.Property(user => user.Email).HasMaxLength(200).IsRequired();
             entity.Property(user => user.PasswordHash).HasMaxLength(512).IsRequired();
             entity.Property(user => user.Avatar).HasMaxLength(16).IsRequired();
             entity.HasIndex(user => user.Email).IsUnique();
+        });
+
+        modelBuilder.Entity<RefreshToken>(entity =>
+        {
+            entity.ToTable("refresh_tokens");
+            entity.HasKey(refreshToken => refreshToken.Id);
+            entity.Property(refreshToken => refreshToken.Id).HasMaxLength(80);
+            entity.Property(refreshToken => refreshToken.UserId).HasMaxLength(80).IsRequired();
+            entity.Property(refreshToken => refreshToken.TokenHash).HasMaxLength(128).IsRequired();
+            entity.Property(refreshToken => refreshToken.ReplacedByTokenHash).HasMaxLength(128);
+            entity.HasIndex(refreshToken => refreshToken.TokenHash).IsUnique();
+            entity.HasIndex(refreshToken => new { refreshToken.UserId, refreshToken.ExpiresAtUtc });
+            entity.HasOne(refreshToken => refreshToken.User)
+                .WithMany(user => user.RefreshTokens)
+                .HasForeignKey(refreshToken => refreshToken.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<Itinerary>(entity =>

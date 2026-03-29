@@ -28,6 +28,7 @@ public sealed class TravelPlannerApiFactory : WebApplicationFactory<Program>
                 ["Jwt:Audience"] = "TravelPlannerApp.Tests.Client",
                 ["Jwt:Secret"] = "integration-tests-secret-key-1234567890",
                 ["Jwt:TokenLifetimeMinutes"] = "120",
+                ["Jwt:RefreshTokenLifetimeDays"] = "14",
                 ["Seed:DefaultUserPassword"] = SeedPassword
             });
         });
