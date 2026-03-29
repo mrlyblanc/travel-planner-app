@@ -1,19 +1,14 @@
 services:
-  mysql:
-    image: mysql:8.0.36
-    container_name: travel-planner-mysql
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: travel-planner-sqlserver
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: travel_planner_app
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
     ports:
-      - "3306:3306"
+      - "1433:1433"
     volumes:
-      - travel-planner-mysql-data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h localhost -p${MYSQL_ROOT_PASSWORD}"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
+      - travel-planner-sqlserver-data:/var/opt/mssql
 
 volumes:
-  travel-planner-mysql-data:
+  travel-planner-sqlserver-data:

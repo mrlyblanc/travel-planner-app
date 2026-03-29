@@ -1,4 +1,5 @@
 using TravelPlannerApp.Application.Abstractions.Persistence;
+using TravelPlannerApp.Application.Abstractions.Security;
 using TravelPlannerApp.Application.Common.Exceptions;
 using TravelPlannerApp.Application.Common.Utilities;
 using TravelPlannerApp.Application.Contracts.Users;
@@ -10,11 +11,13 @@ namespace TravelPlannerApp.Application.Services;
 public sealed class UserService : IUserService
 {
     private readonly IUserRepository _userRepository;
+    private readonly IPasswordHasher _passwordHasher;
     private readonly IUnitOfWork _unitOfWork;
 
-    public UserService(IUserRepository userRepository, IUnitOfWork unitOfWork)
+    public UserService(IUserRepository userRepository, IPasswordHasher passwordHasher, IUnitOfWork unitOfWork)
     {
         _userRepository = userRepository;
+        _passwordHasher = passwordHasher;
         _unitOfWork = unitOfWork;
     }
 
@@ -51,6 +54,7 @@ public sealed class UserService : IUserService
             ConcurrencyToken = ConcurrencyTokenHelper.NewToken(),
             Name = request.Name.Trim(),
             Email = normalizedEmail,
+            PasswordHash = _passwordHasher.HashPassword(request.Password),
             Avatar = ResolveAvatar(request.Avatar, request.Name),
             CreatedAtUtc = DateTime.UtcNow
         };

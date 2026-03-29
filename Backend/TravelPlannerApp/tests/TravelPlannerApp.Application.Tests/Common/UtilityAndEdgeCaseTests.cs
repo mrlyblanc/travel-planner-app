@@ -50,7 +50,7 @@ public sealed class UtilityAndEdgeCaseTests
     {
         var userRepository = new FakeUserRepository();
         userRepository.Users.Add(TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com", "XX"));
-        var service = new UserService(userRepository, new FakeUnitOfWork());
+        var service = new UserService(userRepository, new FakePasswordHasher(), new FakeUnitOfWork());
 
         var response = await service.UpdateUserAsync("user-ava", "user-ava-v1", new UpdateUserRequest
         {
@@ -164,7 +164,7 @@ public sealed class UtilityAndEdgeCaseTests
     }
 
     [Fact]
-    public async Task EventService_GetEventsAsync_WithoutCurrentUser_ThrowsBadRequestException()
+    public async Task EventService_GetEventsAsync_WithoutCurrentUser_ThrowsUnauthorizedException()
     {
         var service = new EventService(
             new FakeCurrentUserAccessor(),
@@ -174,7 +174,7 @@ public sealed class UtilityAndEdgeCaseTests
             new FakeUnitOfWork(),
             new FakeRealtimeNotifier());
 
-        await Assert.ThrowsAsync<BadRequestException>(() => service.GetEventsAsync("itinerary-tokyo"));
+        await Assert.ThrowsAsync<UnauthorizedException>(() => service.GetEventsAsync("itinerary-tokyo"));
     }
 
     [Fact]

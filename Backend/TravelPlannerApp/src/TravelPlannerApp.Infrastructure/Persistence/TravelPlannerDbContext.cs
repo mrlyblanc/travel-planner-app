@@ -41,6 +41,7 @@ public sealed class TravelPlannerDbContext : DbContext, IUnitOfWork
             entity.Property(user => user.ConcurrencyToken).HasMaxLength(40).IsConcurrencyToken().IsRequired();
             entity.Property(user => user.Name).HasMaxLength(120).IsRequired();
             entity.Property(user => user.Email).HasMaxLength(200).IsRequired();
+            entity.Property(user => user.PasswordHash).HasMaxLength(512).IsRequired();
             entity.Property(user => user.Avatar).HasMaxLength(16).IsRequired();
             entity.HasIndex(user => user.Email).IsUnique();
         });

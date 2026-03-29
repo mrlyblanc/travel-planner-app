@@ -1,4 +1,7 @@
+using Microsoft.AspNetCore.Authorization;
+using TravelPlannerApp.Api.Common.Authorization;
 using TravelPlannerApp.Api.Extensions;
+using TravelPlannerApp.Application.Abstractions.Persistence;
 using TravelPlannerApp.Application.Contracts.Itineraries;
 using TravelPlannerApp.Application.Services;
 
@@ -21,12 +24,22 @@ public static class ItineraryMemberEndpoints
         })
             .WithSummary("List itinerary members");
 
-        group.MapPut("/", async (string itineraryId, ReplaceItineraryMembersRequest request, IItineraryService service, HttpContext httpContext, CancellationToken cancellationToken) =>
+        group.MapPut("/", async Task<IResult> (string itineraryId, ReplaceItineraryMembersRequest request, IItineraryService service, IItineraryRepository itineraryRepository, IAuthorizationService authorizationService, HttpContext httpContext, CancellationToken cancellationToken) =>
         {
+            var itinerary = await itineraryRepository.GetByIdAsync(itineraryId, cancellationToken);
+            if (itinerary is not null)
+            {
+                var authorizationResult = await authorizationService.AuthorizeAsync(httpContext.User, itinerary, AuthorizationPolicies.ResourceOwner);
+                if (!authorizationResult.Succeeded)
+                {
+                    return Results.Forbid();
+                }
+            }
+
             var members = await service.ReplaceMembersAsync(itineraryId, httpContext.Request.GetIfMatchVersion(), request, cancellationToken);
-            var itinerary = await service.GetItineraryByIdAsync(itineraryId, cancellationToken);
-            httpContext.Response.SetETag(itinerary.Version);
-            return TypedResults.Ok(members);
+            var responseItinerary = await service.GetItineraryByIdAsync(itineraryId, cancellationToken);
+            httpContext.Response.SetETag(responseItinerary.Version);
+            return Results.Ok(members);
         })
             .Validate<ReplaceItineraryMembersRequest>()
             .RequireIfMatchHeader()

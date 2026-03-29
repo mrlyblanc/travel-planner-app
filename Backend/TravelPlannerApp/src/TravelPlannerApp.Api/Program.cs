@@ -13,15 +13,13 @@ try
 {
     builder.Services.AddApplication();
     builder.Services.AddInfrastructure(builder.Configuration, builder.Environment.IsDevelopment());
-    builder.Services.AddApiServices(builder.Configuration);
+    builder.Services.AddApiServices(builder.Configuration, builder.Environment.IsDevelopment());
 
     var app = builder.Build();
 
     await app.Services.InitialiseDatabaseAsync();
 
-    app.Logger.LogInformation(
-        "Starting TravelPlannerApp API with provider {DatabaseProvider}",
-        builder.Configuration["Database:Provider"] ?? "MySql");
+    app.Logger.LogInformation("Starting TravelPlannerApp API with SQL Server");
 
     app.UseApiDefaults();
     app.MapApi();

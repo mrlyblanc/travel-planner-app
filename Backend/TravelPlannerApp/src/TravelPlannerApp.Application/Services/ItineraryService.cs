@@ -233,7 +233,7 @@ public sealed class ItineraryService : IItineraryService
         var currentUserId = _currentUserAccessor.GetCurrentUserId();
         if (string.IsNullOrWhiteSpace(currentUserId))
         {
-            throw new BadRequestException("X-User-Id header is required.");
+            throw new UnauthorizedException("Authenticated user is required.");
         }
 
         var currentUser = await _userRepository.GetByIdAsync(currentUserId.Trim(), cancellationToken);

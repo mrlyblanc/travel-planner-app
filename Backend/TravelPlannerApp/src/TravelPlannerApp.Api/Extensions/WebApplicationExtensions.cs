@@ -1,6 +1,9 @@
 using Asp.Versioning;
+using System.Security.Claims;
 using Serilog;
+using TravelPlannerApp.Api.Common.Authorization;
 using TravelPlannerApp.Api.Common.Errors;
+using TravelPlannerApp.Api.Common.Security;
 using TravelPlannerApp.Api.Endpoints;
 using TravelPlannerApp.Api.Realtime;
 
@@ -32,7 +35,7 @@ public static class WebApplicationExtensions
                 diagnosticContext.Set("TraceId", httpContext.TraceIdentifier);
                 diagnosticContext.Set("RequestHost", httpContext.Request.Host.Value ?? string.Empty);
                 diagnosticContext.Set("RequestScheme", httpContext.Request.Scheme);
-                diagnosticContext.Set("CurrentUserId", httpContext.Request.Headers["X-User-Id"].FirstOrDefault() ?? "anonymous");
+                diagnosticContext.Set("CurrentUserId", httpContext.User.GetCurrentUserId() ?? "anonymous");
             };
         });
         app.UseMiddleware<AppExceptionMiddleware>();
@@ -40,6 +43,8 @@ public static class WebApplicationExtensions
         app.UseSwaggerUI();
         app.UseCors(ServiceCollectionExtensions.CorsPolicyName);
         app.UseHttpsRedirection();
+        app.UseAuthentication();
+        app.UseAuthorization();
         return app;
     }
 
@@ -57,13 +62,15 @@ public static class WebApplicationExtensions
             .HasApiVersion(new ApiVersion(1, 0))
             .RequireApiVersionHeader();
 
+        api.MapAuthEndpoints();
         api.MapUserEndpoints();
         api.MapItineraryEndpoints();
         api.MapItineraryMemberEndpoints();
         api.MapEventEndpoints();
         api.MapEventHistoryEndpoints();
 
-        app.MapHub<ItineraryHub>("/hubs/itinerary");
+        app.MapHub<ItineraryHub>("/hubs/itinerary")
+            .RequireAuthorization(AuthorizationPolicies.AuthenticatedUser);
 
         return app;
     }

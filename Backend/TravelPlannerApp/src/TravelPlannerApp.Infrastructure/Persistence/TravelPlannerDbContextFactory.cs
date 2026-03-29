@@ -26,24 +26,11 @@ public sealed class TravelPlannerDbContextFactory : IDesignTimeDbContextFactory<
         }
 
         var configuration = configurationBuilder.Build();
-        var provider = (configuration["Database:Provider"] ?? "MySql").Trim();
-
         var optionsBuilder = new DbContextOptionsBuilder<TravelPlannerDbContext>();
-        if (provider.Equals("SqlServer", StringComparison.OrdinalIgnoreCase))
-        {
-            var connectionString = configuration.GetConnectionString("SqlServer")
-                ?? throw new InvalidOperationException("ConnectionStrings:SqlServer is missing.");
-            EnsureDatabaseNameExists(connectionString, "ConnectionStrings:SqlServer");
-            optionsBuilder.UseSqlServer(connectionString);
-        }
-        else
-        {
-            var connectionString = configuration.GetConnectionString("MySql")
-                ?? throw new InvalidOperationException("ConnectionStrings:MySql is missing.");
-            EnsureDatabaseNameExists(connectionString, "ConnectionStrings:MySql");
-            var serverVersion = configuration["Database:ServerVersion"] ?? "8.0.36";
-            optionsBuilder.UseMySql(connectionString, new MySqlServerVersion(Version.Parse(serverVersion)));
-        }
+        var connectionString = configuration.GetConnectionString("SqlServer")
+            ?? throw new InvalidOperationException("ConnectionStrings:SqlServer is missing.");
+        EnsureDatabaseNameExists(connectionString, "ConnectionStrings:SqlServer");
+        optionsBuilder.UseSqlServer(connectionString);
 
         return new TravelPlannerDbContext(optionsBuilder.Options);
     }

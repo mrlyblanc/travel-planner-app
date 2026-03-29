@@ -1,4 +1,5 @@
 using TravelPlannerApp.Api.Common.Concurrency;
+using TravelPlannerApp.Api.Common.Authorization;
 using TravelPlannerApp.Api.Common.Swagger;
 using TravelPlannerApp.Api.Common.Validation;
 using TravelPlannerApp.Api.Common.Versioning;
@@ -9,7 +10,7 @@ public static class RouteBuilderExtensions
 {
     public static RouteGroupBuilder RequireCurrentUser(this RouteGroupBuilder builder)
     {
-        builder.WithMetadata(new RequireCurrentUserHeaderAttribute());
+        builder.RequireAuthorization(AuthorizationPolicies.AuthenticatedUser);
         return builder;
     }
 

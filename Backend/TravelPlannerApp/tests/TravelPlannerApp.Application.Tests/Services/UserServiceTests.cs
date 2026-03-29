@@ -19,7 +19,7 @@ public sealed class UserServiceTests
             TestDataFactory.CreateUser("user-luca", "Luca Reyes", "luca@example.com")
         ]);
 
-        var service = new UserService(userRepository, new FakeUnitOfWork());
+        var service = new UserService(userRepository, new FakePasswordHasher(), new FakeUnitOfWork());
 
         var response = await service.GetUsersAsync();
 
@@ -29,7 +29,7 @@ public sealed class UserServiceTests
     [Fact]
     public async Task GetUserByIdAsync_WhenUserDoesNotExist_ThrowsNotFoundException()
     {
-        var service = new UserService(new FakeUserRepository(), new FakeUnitOfWork());
+        var service = new UserService(new FakeUserRepository(), new FakePasswordHasher(), new FakeUnitOfWork());
 
         var action = () => service.GetUserByIdAsync("user-missing");
 
@@ -41,12 +41,13 @@ public sealed class UserServiceTests
     {
         var userRepository = new FakeUserRepository();
         var unitOfWork = new FakeUnitOfWork();
-        var service = new UserService(userRepository, unitOfWork);
+        var service = new UserService(userRepository, new FakePasswordHasher(), unitOfWork);
 
         var response = await service.CreateUserAsync(new CreateUserRequest
         {
             Name = "Ava Santos",
-            Email = " Ava.Santos@Example.com "
+            Email = " Ava.Santos@Example.com ",
+            Password = "Pass12345!"
         });
 
         Assert.Equal("ava.santos@example.com", response.Email);
@@ -66,7 +67,7 @@ public sealed class UserServiceTests
             TestDataFactory.CreateUser("user-luca", "Luca Reyes", "luca@example.com")
         ]);
 
-        var service = new UserService(userRepository, new FakeUnitOfWork());
+        var service = new UserService(userRepository, new FakePasswordHasher(), new FakeUnitOfWork());
 
         var action = () => service.UpdateUserAsync("user-luca", "user-luca-v1", new UpdateUserRequest
         {
@@ -83,7 +84,7 @@ public sealed class UserServiceTests
         var userRepository = new FakeUserRepository();
         userRepository.Users.Add(TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com"));
 
-        var service = new UserService(userRepository, new FakeUnitOfWork());
+        var service = new UserService(userRepository, new FakePasswordHasher(), new FakeUnitOfWork());
 
         await Assert.ThrowsAsync<PreconditionRequiredException>(() => service.UpdateUserAsync("user-ava", null, new UpdateUserRequest
         {
@@ -98,7 +99,7 @@ public sealed class UserServiceTests
         var userRepository = new FakeUserRepository();
         userRepository.Users.Add(TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com"));
 
-        var service = new UserService(userRepository, new FakeUnitOfWork());
+        var service = new UserService(userRepository, new FakePasswordHasher(), new FakeUnitOfWork());
 
         await Assert.ThrowsAsync<PreconditionFailedException>(() => service.UpdateUserAsync("user-ava", ConcurrencyTokenHelper.ToETag("stale-version"), new UpdateUserRequest
         {

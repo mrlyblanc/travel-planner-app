@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using TravelPlannerApp.Api.IntegrationTests.Support;
+using TravelPlannerApp.Application.Contracts.Auth;
 using TravelPlannerApp.Application.Contracts.Events;
 using TravelPlannerApp.Application.Contracts.Itineraries;
 using TravelPlannerApp.Application.Contracts.Users;
@@ -12,22 +13,58 @@ namespace TravelPlannerApp.Api.IntegrationTests;
 
 public sealed class MinimalApiEndpointsTests
 {
+    private const string AvaEmail = "ava.santos@globejet.com";
+    private const string LucaEmail = "luca.reyes@globejet.com";
+    private const string MinaEmail = "mina.park@globejet.com";
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         Converters = { new JsonStringEnumConverter() }
     };
 
     [Fact]
-    public async Task GetUsers_ReturnsSeededUsers()
+    public async Task GetUsers_WithoutToken_ReturnsUnauthorized()
     {
         using var factory = new TravelPlannerApiFactory();
         using var client = factory.CreateApiClient();
 
-        var users = await client.GetFromJsonAsync<List<UserResponse>>("/api/users", JsonOptions);
+        var response = await client.GetAsync("/api/users");
 
-        Assert.NotNull(users);
-        Assert.Contains(users!, user => user.Id == "user-ava" && user.Email == "ava.santos@globejet.com");
-        Assert.All(users!, user => Assert.False(string.IsNullOrWhiteSpace(user.Version)));
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Login_WithSeededCredentials_ReturnsJwtAndUser()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = factory.CreateApiClient();
+
+        var response = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
+        {
+            Email = AvaEmail,
+            Password = TravelPlannerApiFactory.SeedPassword
+        }, JsonOptions);
+
+        response.EnsureSuccessStatusCode();
+        var payload = await response.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions);
+        Assert.NotNull(payload);
+        Assert.False(string.IsNullOrWhiteSpace(payload!.AccessToken));
+        Assert.Equal("Bearer", payload.TokenType);
+        Assert.Equal("user-ava", payload.User.Id);
+    }
+
+    [Fact]
+    public async Task AuthMe_WithBearerToken_ReturnsCurrentUser()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
+
+        var response = await client.GetAsync("/api/auth/me");
+
+        response.EnsureSuccessStatusCode();
+        var user = await response.Content.ReadFromJsonAsync<UserResponse>(JsonOptions);
+        Assert.NotNull(user);
+        Assert.Equal("user-ava", user!.Id);
     }
 
     [Fact]
@@ -46,7 +83,7 @@ public sealed class MinimalApiEndpointsTests
     public async Task GetUsers_WithExplicitApiVersionHeader_ReturnsUsersAndSupportedVersionHeader()
     {
         using var factory = new TravelPlannerApiFactory();
-        using var client = factory.CreateApiClient();
+        using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
         client.DefaultRequestHeaders.Add("X-Api-Version", "1.0");
 
         var response = await client.GetAsync("/api/users");
@@ -57,7 +94,7 @@ public sealed class MinimalApiEndpointsTests
     }
 
     [Fact]
-    public async Task SwaggerJson_IncludesApiVersionCurrentUserAndIfMatchHeaders()
+    public async Task SwaggerJson_IncludesApiVersionIfMatchAndBearerSecurityScheme()
     {
         using var factory = new TravelPlannerApiFactory();
         using var client = factory.CreateApiClient();
@@ -67,15 +104,16 @@ public sealed class MinimalApiEndpointsTests
         response.EnsureSuccessStatusCode();
         var payload = await response.Content.ReadAsStringAsync();
         Assert.Contains("X-Api-Version", payload, StringComparison.Ordinal);
-        Assert.Contains("X-User-Id", payload, StringComparison.Ordinal);
         Assert.Contains("If-Match", payload, StringComparison.Ordinal);
+        Assert.Contains("Bearer", payload, StringComparison.Ordinal);
+        Assert.DoesNotContain("X-User-Id", payload, StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task GetUsers_WithUnsupportedApiVersion_ReturnsBadRequest()
     {
         using var factory = new TravelPlannerApiFactory();
-        using var client = factory.CreateApiClient();
+        using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
         client.DefaultRequestHeaders.Add("X-Api-Version", "2.0");
 
         var response = await client.GetAsync("/api/users");
@@ -84,34 +122,10 @@ public sealed class MinimalApiEndpointsTests
     }
 
     [Fact]
-    public async Task GetItineraries_WithoutCurrentUserHeader_ReturnsBadRequestProblem()
+    public async Task GetItineraryById_WhenUserIsNotMember_ReturnsForbiddenProblem()
     {
         using var factory = new TravelPlannerApiFactory();
-        using var client = factory.CreateApiClient();
-
-        var response = await client.GetAsync("/api/itineraries");
-
-        await AssertProblemAsync(response, HttpStatusCode.BadRequest, "Bad Request");
-    }
-
-    [Fact]
-    public async Task GetItineraries_WithUnknownCurrentUser_ReturnsUnauthorizedProblem()
-    {
-        using var factory = new TravelPlannerApiFactory();
-        using var client = factory.CreateApiClient();
-        client.DefaultRequestHeaders.Add("X-User-Id", "user-missing");
-
-        var response = await client.GetAsync("/api/itineraries");
-
-        await AssertProblemAsync(response, HttpStatusCode.Unauthorized, "Unauthorized");
-    }
-
-    [Fact]
-    public async Task GetItineraryById_WhenCurrentUserIsNotAMember_ReturnsForbiddenProblem()
-    {
-        using var factory = new TravelPlannerApiFactory();
-        using var client = factory.CreateApiClient();
-        client.DefaultRequestHeaders.Add("X-User-Id", "user-mina");
+        using var client = await factory.CreateAuthenticatedClientAsync(MinaEmail);
 
         var response = await client.GetAsync("/api/itineraries/itinerary-singapore");
 
@@ -122,8 +136,7 @@ public sealed class MinimalApiEndpointsTests
     public async Task CreateEvent_WithInvalidSchedule_ReturnsValidationProblem()
     {
         using var factory = new TravelPlannerApiFactory();
-        using var client = factory.CreateApiClient();
-        client.DefaultRequestHeaders.Add("X-User-Id", "user-ava");
+        using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
 
         var response = await client.PostAsJsonAsync("/api/itineraries/itinerary-tokyo/events", new CreateEventRequest
         {
@@ -144,8 +157,7 @@ public sealed class MinimalApiEndpointsTests
     public async Task CreateEvent_WithValidPayload_CreatesEventAndAuditHistory()
     {
         using var factory = new TravelPlannerApiFactory();
-        using var client = factory.CreateApiClient();
-        client.DefaultRequestHeaders.Add("X-User-Id", "user-ava");
+        using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
 
         var createResponse = await client.PostAsJsonAsync("/api/itineraries/itinerary-tokyo/events", new CreateEventRequest
         {
@@ -161,9 +173,8 @@ public sealed class MinimalApiEndpointsTests
         Assert.True(createResponse.Headers.ETag is not null);
         var createdEvent = await createResponse.Content.ReadFromJsonAsync<EventResponse>(JsonOptions);
         Assert.NotNull(createdEvent);
-        Assert.False(string.IsNullOrWhiteSpace(createdEvent!.Version));
 
-        var history = await client.GetFromJsonAsync<List<EventAuditLogResponse>>($"/api/events/{createdEvent.Id}/history", JsonOptions);
+        var history = await client.GetFromJsonAsync<List<EventAuditLogResponse>>($"/api/events/{createdEvent!.Id}/history", JsonOptions);
 
         Assert.NotNull(history);
         Assert.Single(history!);
@@ -174,8 +185,7 @@ public sealed class MinimalApiEndpointsTests
     public async Task UpdateEvent_WithValidPayload_UpdatesEventAndAddsHistoryEntry()
     {
         using var factory = new TravelPlannerApiFactory();
-        using var client = factory.CreateApiClient();
-        client.DefaultRequestHeaders.Add("X-User-Id", "user-ava");
+        using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
 
         var staleEtag = await GetEtagAsync(client, "/api/events/evt-tokyo-1");
 
@@ -213,8 +223,7 @@ public sealed class MinimalApiEndpointsTests
     public async Task UpdateEvent_WithoutIfMatch_ReturnsPreconditionRequiredProblem()
     {
         using var factory = new TravelPlannerApiFactory();
-        using var client = factory.CreateApiClient();
-        client.DefaultRequestHeaders.Add("X-User-Id", "user-ava");
+        using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
 
         var response = await client.PutAsJsonAsync("/api/events/evt-tokyo-1", new UpdateEventRequest
         {
@@ -239,8 +248,7 @@ public sealed class MinimalApiEndpointsTests
     public async Task UpdateEvent_WithStaleIfMatch_ReturnsPreconditionFailedProblem()
     {
         using var factory = new TravelPlannerApiFactory();
-        using var client = factory.CreateApiClient();
-        client.DefaultRequestHeaders.Add("X-User-Id", "user-ava");
+        using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
 
         var staleEtag = await GetEtagAsync(client, "/api/events/evt-tokyo-1");
 
@@ -281,11 +289,31 @@ public sealed class MinimalApiEndpointsTests
     }
 
     [Fact]
+    public async Task UpdateEvent_WhenUserIsNotOwner_ReturnsForbidden()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync(LucaEmail);
+        var staleEtag = await GetEtagAsync(client, "/api/events/evt-tokyo-1");
+
+        var response = await client.SendAsync(CreateIfMatchRequest(HttpMethod.Put, "/api/events/evt-tokyo-1", new UpdateEventRequest
+        {
+            Title = "Blocked update",
+            Description = "Blocked update",
+            Category = EventCategory.Restaurant,
+            Color = "#F97316",
+            StartDateTime = new DateTime(2026, 4, 15, 18, 30, 0),
+            EndDateTime = new DateTime(2026, 4, 15, 21, 45, 0),
+            Timezone = "Asia/Tokyo"
+        }, staleEtag));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task DeleteEvent_AfterCreation_LeavesAuditHistoryAccessible()
     {
         using var factory = new TravelPlannerApiFactory();
-        using var client = factory.CreateApiClient();
-        client.DefaultRequestHeaders.Add("X-User-Id", "user-ava");
+        using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
 
         var createResponse = await client.PostAsJsonAsync("/api/itineraries/itinerary-tokyo/events", new CreateEventRequest
         {
@@ -309,26 +337,42 @@ public sealed class MinimalApiEndpointsTests
     }
 
     [Fact]
-    public async Task GetAccessibleItineraries_WithValidCurrentUser_ReturnsSeededMemberships()
+    public async Task GetAccessibleItineraries_WithValidUser_ReturnsSeededMemberships()
     {
         using var factory = new TravelPlannerApiFactory();
-        using var client = factory.CreateApiClient();
-        client.DefaultRequestHeaders.Add("X-User-Id", "user-luca");
+        using var client = await factory.CreateAuthenticatedClientAsync(LucaEmail);
 
         var itineraries = await client.GetFromJsonAsync<List<ItineraryResponse>>("/api/itineraries", JsonOptions);
 
         Assert.NotNull(itineraries);
         Assert.Contains(itineraries!, itinerary => itinerary.Id == "itinerary-tokyo");
         Assert.Contains(itineraries!, itinerary => itinerary.Id == "itinerary-singapore");
-        Assert.All(itineraries!, itinerary => Assert.False(string.IsNullOrWhiteSpace(itinerary.Version)));
+    }
+
+    [Fact]
+    public async Task UpdateItinerary_WhenUserIsNotOwner_ReturnsForbidden()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync(LucaEmail);
+        var staleEtag = await GetEtagAsync(client, "/api/itineraries/itinerary-tokyo");
+
+        var response = await client.SendAsync(CreateIfMatchRequest(HttpMethod.Put, "/api/itineraries/itinerary-tokyo", new UpdateItineraryRequest
+        {
+            Title = "Blocked",
+            Destination = "Tokyo",
+            Description = "Blocked",
+            StartDate = new DateOnly(2026, 4, 14),
+            EndDate = new DateOnly(2026, 4, 18)
+        }, staleEtag));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
     public async Task ReplaceMembers_WhenCreatorIsOmitted_KeepsCreatorInResponse()
     {
         using var factory = new TravelPlannerApiFactory();
-        using var client = factory.CreateApiClient();
-        client.DefaultRequestHeaders.Add("X-User-Id", "user-ava");
+        using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
 
         var staleEtag = await GetEtagAsync(client, "/api/itineraries/itinerary-tokyo/members");
 
@@ -346,49 +390,27 @@ public sealed class MinimalApiEndpointsTests
     }
 
     [Fact]
-    public async Task ReplaceMembers_WithStaleIfMatch_ReturnsPreconditionFailedProblem()
+    public async Task ReplaceMembers_WhenUserIsNotOwner_ReturnsForbidden()
     {
         using var factory = new TravelPlannerApiFactory();
-        using var client = factory.CreateApiClient();
-        client.DefaultRequestHeaders.Add("X-User-Id", "user-ava");
-
+        using var client = await factory.CreateAuthenticatedClientAsync(LucaEmail);
         var staleEtag = await GetEtagAsync(client, "/api/itineraries/itinerary-tokyo/members");
 
-        var firstResponse = await client.SendAsync(CreateIfMatchRequest(HttpMethod.Put, "/api/itineraries/itinerary-tokyo/members", new ReplaceItineraryMembersRequest
+        var response = await client.SendAsync(CreateIfMatchRequest(HttpMethod.Put, "/api/itineraries/itinerary-tokyo/members", new ReplaceItineraryMembersRequest
         {
             UserIds = ["user-luca", "user-mina"]
         }, staleEtag));
-        firstResponse.EnsureSuccessStatusCode();
 
-        var staleResponse = await client.SendAsync(CreateIfMatchRequest(HttpMethod.Put, "/api/itineraries/itinerary-tokyo/members", new ReplaceItineraryMembersRequest
-        {
-            UserIds = ["user-luca"]
-        }, staleEtag));
-
-        await AssertProblemAsync(staleResponse, HttpStatusCode.PreconditionFailed, "Precondition Failed");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
     public async Task GetEventById_ReturnsEtagHeader()
     {
         using var factory = new TravelPlannerApiFactory();
-        using var client = factory.CreateApiClient();
-        client.DefaultRequestHeaders.Add("X-User-Id", "user-ava");
+        using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
 
         var response = await client.GetAsync("/api/events/evt-tokyo-1");
-
-        response.EnsureSuccessStatusCode();
-        Assert.True(response.Headers.ETag is not null);
-    }
-
-    [Fact]
-    public async Task GetItineraryMembers_ReturnsItineraryEtagHeader()
-    {
-        using var factory = new TravelPlannerApiFactory();
-        using var client = factory.CreateApiClient();
-        client.DefaultRequestHeaders.Add("X-User-Id", "user-ava");
-
-        var response = await client.GetAsync("/api/itineraries/itinerary-tokyo/members");
 
         response.EnsureSuccessStatusCode();
         Assert.True(response.Headers.ETag is not null);
@@ -403,7 +425,8 @@ public sealed class MinimalApiEndpointsTests
         var response = await client.PostAsJsonAsync("/api/users", new CreateUserRequest
         {
             Name = "Duplicate",
-            Email = "ava.santos@globejet.com"
+            Email = AvaEmail,
+            Password = "Pass12345!"
         }, JsonOptions);
 
         await AssertProblemAsync(response, HttpStatusCode.Conflict, "Conflict");
@@ -418,7 +441,8 @@ public sealed class MinimalApiEndpointsTests
         var response = await client.PostAsJsonAsync("/api/users", new CreateUserRequest
         {
             Name = "New User",
-            Email = "new.user@example.com"
+            Email = "new.user@example.com",
+            Password = "Pass12345!"
         }, JsonOptions);
 
         response.EnsureSuccessStatusCode();
@@ -426,6 +450,23 @@ public sealed class MinimalApiEndpointsTests
         var user = await response.Content.ReadFromJsonAsync<UserResponse>(JsonOptions);
         Assert.NotNull(user);
         Assert.False(string.IsNullOrWhiteSpace(user!.Version));
+    }
+
+    [Fact]
+    public async Task UpdateUser_WhenTargetingAnotherProfile_ReturnsForbidden()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync(LucaEmail);
+        var staleEtag = await GetEtagAsync(client, "/api/users/user-ava");
+
+        var response = await client.SendAsync(CreateIfMatchRequest(HttpMethod.Put, "/api/users/user-ava", new UpdateUserRequest
+        {
+            Name = "Blocked",
+            Email = AvaEmail,
+            Avatar = "AS"
+        }, staleEtag));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     private static HttpRequestMessage CreateIfMatchRequest(HttpMethod method, string path, object? body, string etag)

@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using TravelPlannerApp.Application.Abstractions.Security;
 using TravelPlannerApp.Application.Common.Utilities;
 using TravelPlannerApp.Application.Mappings;
 using TravelPlannerApp.Domain.Entities;
@@ -11,12 +13,20 @@ namespace TravelPlannerApp.Infrastructure.Persistence.Seed;
 public sealed class TravelPlannerDbSeeder
 {
     private readonly TravelPlannerDbContext _dbContext;
+    private readonly IConfiguration _configuration;
     private readonly ILogger<TravelPlannerDbSeeder> _logger;
+    private readonly IPasswordHasher _passwordHasher;
 
-    public TravelPlannerDbSeeder(TravelPlannerDbContext dbContext, ILogger<TravelPlannerDbSeeder> logger)
+    public TravelPlannerDbSeeder(
+        TravelPlannerDbContext dbContext,
+        IConfiguration configuration,
+        ILogger<TravelPlannerDbSeeder> logger,
+        IPasswordHasher passwordHasher)
     {
         _dbContext = dbContext;
+        _configuration = configuration;
         _logger = logger;
+        _passwordHasher = passwordHasher;
     }
 
     public async Task SeedAsync(CancellationToken cancellationToken = default)
@@ -29,7 +39,7 @@ public sealed class TravelPlannerDbSeeder
 
         _logger.LogInformation("Seeding initial travel planner data");
 
-        var users = CreateUsers();
+        var users = CreateUsers(GetSeedPassword());
         await _dbContext.Users.AddRangeAsync(users, cancellationToken);
 
         var itineraries = CreateItineraries();
@@ -48,19 +58,31 @@ public sealed class TravelPlannerDbSeeder
         _logger.LogInformation("Seed data inserted successfully");
     }
 
-    private static List<User> CreateUsers()
+    private List<User> CreateUsers(string seedPassword)
     {
         var createdAt = new DateTime(2026, 1, 5, 8, 0, 0, DateTimeKind.Utc);
+        var passwordHash = _passwordHasher.HashPassword(seedPassword);
 
         return
         [
-            new User { Id = "user-ava", ConcurrencyToken = "00000000000000000000000000000011", Name = "Ava Santos", Email = "ava.santos@globejet.com", Avatar = "AS", CreatedAtUtc = createdAt },
-            new User { Id = "user-luca", ConcurrencyToken = "00000000000000000000000000000012", Name = "Luca Reyes", Email = "luca.reyes@globejet.com", Avatar = "LR", CreatedAtUtc = createdAt.AddMinutes(2) },
-            new User { Id = "user-mina", ConcurrencyToken = "00000000000000000000000000000013", Name = "Mina Park", Email = "mina.park@globejet.com", Avatar = "MP", CreatedAtUtc = createdAt.AddMinutes(4) },
-            new User { Id = "user-ethan", ConcurrencyToken = "00000000000000000000000000000014", Name = "Ethan Cruz", Email = "ethan.cruz@globejet.com", Avatar = "EC", CreatedAtUtc = createdAt.AddMinutes(6) },
-            new User { Id = "user-sofia", ConcurrencyToken = "00000000000000000000000000000015", Name = "Sofia Lim", Email = "sofia.lim@globejet.com", Avatar = "SL", CreatedAtUtc = createdAt.AddMinutes(8) },
-            new User { Id = "user-noah", ConcurrencyToken = "00000000000000000000000000000016", Name = "Noah Tan", Email = "noah.tan@globejet.com", Avatar = "NT", CreatedAtUtc = createdAt.AddMinutes(10) }
+            new User { Id = "user-ava", ConcurrencyToken = "00000000000000000000000000000011", Name = "Ava Santos", Email = "ava.santos@globejet.com", PasswordHash = passwordHash, Avatar = "AS", CreatedAtUtc = createdAt },
+            new User { Id = "user-luca", ConcurrencyToken = "00000000000000000000000000000012", Name = "Luca Reyes", Email = "luca.reyes@globejet.com", PasswordHash = passwordHash, Avatar = "LR", CreatedAtUtc = createdAt.AddMinutes(2) },
+            new User { Id = "user-mina", ConcurrencyToken = "00000000000000000000000000000013", Name = "Mina Park", Email = "mina.park@globejet.com", PasswordHash = passwordHash, Avatar = "MP", CreatedAtUtc = createdAt.AddMinutes(4) },
+            new User { Id = "user-ethan", ConcurrencyToken = "00000000000000000000000000000014", Name = "Ethan Cruz", Email = "ethan.cruz@globejet.com", PasswordHash = passwordHash, Avatar = "EC", CreatedAtUtc = createdAt.AddMinutes(6) },
+            new User { Id = "user-sofia", ConcurrencyToken = "00000000000000000000000000000015", Name = "Sofia Lim", Email = "sofia.lim@globejet.com", PasswordHash = passwordHash, Avatar = "SL", CreatedAtUtc = createdAt.AddMinutes(8) },
+            new User { Id = "user-noah", ConcurrencyToken = "00000000000000000000000000000016", Name = "Noah Tan", Email = "noah.tan@globejet.com", PasswordHash = passwordHash, Avatar = "NT", CreatedAtUtc = createdAt.AddMinutes(10) }
         ];
+    }
+
+    private string GetSeedPassword()
+    {
+        var password = _configuration["Seed:DefaultUserPassword"]?.Trim();
+        if (string.IsNullOrWhiteSpace(password) || string.Equals(password, "__set_in_env__", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Seed:DefaultUserPassword must be configured before seeding users.");
+        }
+
+        return password;
     }
 
     private static List<Itinerary> CreateItineraries()

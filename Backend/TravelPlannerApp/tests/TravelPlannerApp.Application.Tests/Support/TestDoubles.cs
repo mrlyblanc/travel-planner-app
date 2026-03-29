@@ -2,6 +2,7 @@ using System.Text.Json;
 using TravelPlannerApp.Application.Abstractions.CurrentUser;
 using TravelPlannerApp.Application.Abstractions.Persistence;
 using TravelPlannerApp.Application.Abstractions.Realtime;
+using TravelPlannerApp.Application.Abstractions.Security;
 using TravelPlannerApp.Application.Common.Utilities;
 using TravelPlannerApp.Application.Mappings;
 using TravelPlannerApp.Domain.Entities;
@@ -35,6 +36,27 @@ internal sealed class FakeRealtimeNotifier : IItineraryRealtimeNotifier
     {
         Notifications.Add(notification);
         return Task.CompletedTask;
+    }
+}
+
+internal sealed class FakePasswordHasher : IPasswordHasher
+{
+    public string HashPassword(string password)
+    {
+        return $"hashed::{password}";
+    }
+
+    public bool VerifyHashedPassword(string hashedPassword, string providedPassword)
+    {
+        return string.Equals(hashedPassword, HashPassword(providedPassword), StringComparison.Ordinal);
+    }
+}
+
+internal sealed class FakeJwtTokenGenerator : IJwtTokenGenerator
+{
+    public TokenResult GenerateToken(User user)
+    {
+        return new TokenResult($"token-for-{user.Id}", new DateTime(2026, 12, 31, 0, 0, 0, DateTimeKind.Utc));
     }
 }
 
@@ -175,6 +197,7 @@ internal static class TestDataFactory
             ConcurrencyToken = $"{id}-v1",
             Name = name,
             Email = email,
+            PasswordHash = "hashed::Pass12345!",
             Avatar = avatar,
             CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
         };

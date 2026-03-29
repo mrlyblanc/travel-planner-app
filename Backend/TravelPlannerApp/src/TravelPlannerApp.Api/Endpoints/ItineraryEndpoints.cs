@@ -1,4 +1,7 @@
+using Microsoft.AspNetCore.Authorization;
+using TravelPlannerApp.Api.Common.Authorization;
 using TravelPlannerApp.Api.Extensions;
+using TravelPlannerApp.Application.Abstractions.Persistence;
 using TravelPlannerApp.Application.Contracts.Itineraries;
 using TravelPlannerApp.Application.Services;
 
@@ -33,11 +36,21 @@ public static class ItineraryEndpoints
             .Validate<CreateItineraryRequest>()
             .WithSummary("Create itinerary");
 
-        group.MapPut("/{itineraryId}", async (string itineraryId, UpdateItineraryRequest request, IItineraryService service, HttpContext httpContext, CancellationToken cancellationToken) =>
+        group.MapPut("/{itineraryId}", async Task<IResult> (string itineraryId, UpdateItineraryRequest request, IItineraryService service, IItineraryRepository itineraryRepository, IAuthorizationService authorizationService, HttpContext httpContext, CancellationToken cancellationToken) =>
         {
+            var itinerary = await itineraryRepository.GetByIdAsync(itineraryId, cancellationToken);
+            if (itinerary is not null)
+            {
+                var authorizationResult = await authorizationService.AuthorizeAsync(httpContext.User, itinerary, AuthorizationPolicies.ResourceOwner);
+                if (!authorizationResult.Succeeded)
+                {
+                    return Results.Forbid();
+                }
+            }
+
             var response = await service.UpdateItineraryAsync(itineraryId, httpContext.Request.GetIfMatchVersion(), request, cancellationToken);
             httpContext.Response.SetETag(response.Version);
-            return TypedResults.Ok(response);
+            return Results.Ok(response);
         })
             .Validate<UpdateItineraryRequest>()
             .RequireIfMatchHeader()

@@ -30,7 +30,7 @@ public sealed class ItineraryServiceTests
     }
 
     [Fact]
-    public async Task GetAccessibleItinerariesAsync_WithoutCurrentUser_ThrowsBadRequestException()
+    public async Task GetAccessibleItinerariesAsync_WithoutCurrentUser_ThrowsUnauthorizedException()
     {
         var service = new ItineraryService(
             new FakeCurrentUserAccessor(),
@@ -39,7 +39,7 @@ public sealed class ItineraryServiceTests
             new FakeUnitOfWork(),
             new FakeRealtimeNotifier());
 
-        await Assert.ThrowsAsync<BadRequestException>(() => service.GetAccessibleItinerariesAsync());
+        await Assert.ThrowsAsync<UnauthorizedException>(() => service.GetAccessibleItinerariesAsync());
     }
 
     [Fact]

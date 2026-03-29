@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Authorization;
+using TravelPlannerApp.Api.Common.Authorization;
 using TravelPlannerApp.Api.Extensions;
 using TravelPlannerApp.Application.Contracts.Users;
 using TravelPlannerApp.Application.Services;
@@ -8,7 +10,9 @@ public static class UserEndpoints
 {
     public static IEndpointRouteBuilder MapUserEndpoints(this IEndpointRouteBuilder builder)
     {
-        var group = builder.MapGroup("/users").WithTags("Users");
+        var group = builder.MapGroup("/users")
+            .WithTags("Users")
+            .RequireCurrentUser();
 
         group.MapGet("/", async (IUserService service, CancellationToken cancellationToken) =>
             Results.Ok(await service.GetUsersAsync(cancellationToken)))
@@ -28,14 +32,21 @@ public static class UserEndpoints
             httpContext.Response.SetETag(response.Version);
             return TypedResults.Created($"/api/users/{response.Id}", response);
         })
+            .AllowAnonymous()
             .Validate<CreateUserRequest>()
-            .WithSummary("Create user");
+            .WithSummary("Register a user");
 
-        group.MapPut("/{userId}", async (string userId, UpdateUserRequest request, IUserService service, HttpContext httpContext, CancellationToken cancellationToken) =>
+        group.MapPut("/{userId}", async Task<IResult> (string userId, UpdateUserRequest request, IUserService service, IAuthorizationService authorizationService, HttpContext httpContext, CancellationToken cancellationToken) =>
         {
+            var authorizationResult = await authorizationService.AuthorizeAsync(httpContext.User, userId, AuthorizationPolicies.ResourceOwner);
+            if (!authorizationResult.Succeeded)
+            {
+                return Results.Forbid();
+            }
+
             var response = await service.UpdateUserAsync(userId, httpContext.Request.GetIfMatchVersion(), request, cancellationToken);
             httpContext.Response.SetETag(response.Version);
-            return TypedResults.Ok(response);
+            return Results.Ok(response);
         })
             .Validate<UpdateUserRequest>()
             .RequireIfMatchHeader()
