@@ -18,7 +18,7 @@ import {
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import FullCalendar from '@fullcalendar/react';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { useToast } from '../app/providers/ToastProvider';
 import { useTravelStore, type EventInput, type ItineraryInput } from '../app/store/useTravelStore';
@@ -66,7 +66,7 @@ export const ItineraryDetailsPage = () => {
     () => allEvents.filter((event) => event.itineraryId === itineraryId),
     [allEvents, itineraryId],
   );
-  const [activeView, setActiveView] = useState<CalendarView>('timeGridWeek');
+  const [activeView, setActiveView] = useState<CalendarView>('dayGridMonth');
   const [rangeLabel, setRangeLabel] = useState('');
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
@@ -85,6 +85,18 @@ export const ItineraryDetailsPage = () => {
   const selectedEvent = selectedEventId ? events.find((event) => event.id === selectedEventId) ?? null : null;
   const members = itinerary.memberIds.map((memberId) => usersMap[memberId]).filter(Boolean);
   const selectedEventHistory = selectedEvent ? eventHistory[selectedEvent.id] ?? [] : [];
+
+  useEffect(() => {
+    setActiveView('dayGridMonth');
+
+    const calendarApi = calendarRef.current?.getApi();
+    if (!calendarApi) {
+      return;
+    }
+
+    calendarApi.changeView('dayGridMonth');
+    calendarApi.gotoDate(itinerary.startDate);
+  }, [itinerary.id, itinerary.startDate]);
 
   const openCreateEvent = (selection?: { start: string; end: string }) => {
     setSelectedEventId(null);
@@ -248,6 +260,7 @@ export const ItineraryDetailsPage = () => {
                 calendarRef={calendarRef}
                 canManage={canManage}
                 events={events}
+                initialDate={itinerary.startDate}
                 onRangeChange={setRangeLabel}
                 onReschedule={(eventId, start, end) => {
                   void rescheduleEvent(eventId, start, end).then(() => showToast('Event rescheduled'));

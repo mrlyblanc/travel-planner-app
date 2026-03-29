@@ -38,23 +38,30 @@ export const timezoneOptions = [
   'UTC',
 ];
 
-export const eventColorPalette = [
-  '#2b6edc',
-  '#00897b',
-  '#2e7d32',
-  '#ef6c00',
-  '#c2185b',
-  '#7b1fa2',
-  '#5c6bc0',
-  '#455a64',
-  '#d84315',
-  '#00838f',
-];
+export const normalizeEventColor = (value: string | null | undefined) => value?.trim().toUpperCase() ?? '';
 
-export const getDefaultEventColor = (category: EventCategory) => eventCategoryMeta[category].color;
+const extraEventColors = ['#2B6EDC', '#D84315', '#00838F', '#F97316', '#0F766E', '#16A34A'];
+
+export const eventColorPalette = Array.from(
+  new Map(
+    [...Object.values(eventCategoryMeta).map((meta) => meta.color), ...extraEventColors].map((color) => [
+      normalizeEventColor(color),
+      normalizeEventColor(color),
+    ]),
+  ).values(),
+);
+
+export const getEventColorOptions = (selectedColor?: string | null) => {
+  const normalizedSelectedColor = normalizeEventColor(selectedColor);
+  const colors = normalizedSelectedColor ? [normalizedSelectedColor, ...eventColorPalette] : eventColorPalette;
+
+  return Array.from(new Map(colors.map((color) => [normalizeEventColor(color), normalizeEventColor(color)])).values());
+};
+
+export const getDefaultEventColor = (category: EventCategory) => normalizeEventColor(eventCategoryMeta[category].color);
 
 export const getEventTextColor = (backgroundColor: string) => {
-  const normalized = backgroundColor.replace('#', '');
+  const normalized = normalizeEventColor(backgroundColor).replace('#', '');
   const fullHex =
     normalized.length === 3
       ? normalized

@@ -14,6 +14,7 @@ export type CalendarView = 'timeGridDay' | 'timeGridThreeDay' | 'timeGridWeek' |
 interface ItineraryCalendarProps {
   calendarRef: RefObject<FullCalendar | null>;
   events: ItineraryEvent[];
+  initialDate: string;
   activeView: CalendarView;
   canManage: boolean;
   onViewChange: (view: CalendarView) => void;
@@ -26,6 +27,7 @@ interface ItineraryCalendarProps {
 export const ItineraryCalendar = ({
   calendarRef,
   events,
+  initialDate,
   activeView,
   canManage,
   onViewChange,
@@ -75,6 +77,7 @@ export const ItineraryCalendar = ({
           const sourceEvent = arg.event.extendedProps.sourceEvent as ItineraryEvent;
           const fillColor = sourceEvent.color || getDefaultEventColor(sourceEvent.category);
           const textColor = getEventTextColor(fillColor);
+          const timeRangeLabel = buildEventTimeRangeLabel(sourceEvent);
 
           return (
             <Box
@@ -90,7 +93,7 @@ export const ItineraryCalendar = ({
                 sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'inherit', opacity: 0.92 }}
                 variant="caption"
               >
-                {arg.timeText}
+                {timeRangeLabel}
               </Typography>
               <Typography
                 sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'inherit', fontWeight: 600 }}
@@ -104,7 +107,7 @@ export const ItineraryCalendar = ({
         events={calendarEvents}
         headerToolbar={false}
         height="auto"
-        initialDate={events[0]?.startDateTime ?? undefined}
+        initialDate={initialDate}
         initialView={activeView}
         nowIndicator
         plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
@@ -157,4 +160,23 @@ const buildRangeLabel = ({ start, end, view }: DatesSetArg) => {
   }
 
   return `${startDate.format('MMM D')} - ${inclusiveEnd.format('MMM D, YYYY')}`;
+};
+
+const buildEventTimeRangeLabel = (event: ItineraryEvent) => {
+  const start = dayjs(event.startDateTime);
+  const end = dayjs(event.endDateTime);
+
+  if (!start.isValid() || !end.isValid()) {
+    return '';
+  }
+
+  if (start.isSame(end, 'day')) {
+    return `${start.format('h:mm A')} - ${end.format('h:mm A')}`;
+  }
+
+  if (start.isSame(end, 'year')) {
+    return `${start.format('MMM D, h:mm A')} - ${end.format('MMM D, h:mm A')}`;
+  }
+
+  return `${start.format('MMM D, YYYY h:mm A')} - ${end.format('MMM D, YYYY h:mm A')}`;
 };

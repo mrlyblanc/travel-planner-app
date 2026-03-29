@@ -1,4 +1,4 @@
-import { getDefaultEventColor } from './events';
+import { getDefaultEventColor, normalizeEventColor } from './events';
 import type { EventAuditLog, EventAuditSnapshot, EventCategory, ItineraryEvent } from '../types/event';
 import type { Itinerary, ItineraryMember } from '../types/itinerary';
 import type { User } from '../types/user';
@@ -353,7 +353,7 @@ const mapEventResponse = (event: EventResponseDto): ItineraryEvent => ({
   title: event.title,
   description: event.description ?? '',
   category: event.category,
-  color: event.color ?? getDefaultEventColor(event.category),
+  color: normalizeEventColor(event.color ?? getDefaultEventColor(event.category)),
   startDateTime: event.startDateTime,
   endDateTime: event.endDateTime,
   timezone: event.timezone,

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Box, Button, Stack, Typography } from '@mui/material';
+import { alpha, styled } from '@mui/material/styles';
 
 interface EmptyStateProps {
   icon: ReactNode;
@@ -16,19 +17,7 @@ export const EmptyState = ({
   actionLabel,
   onAction,
 }: EmptyStateProps) => (
-  <Stack
-    alignItems="center"
-    justifyContent="center"
-    spacing={2}
-    sx={{
-      minHeight: 220,
-      borderRadius: 4,
-      border: '1px dashed rgba(122, 148, 180, 0.34)',
-      bgcolor: 'rgba(255, 255, 255, 0.56)',
-      p: 4,
-      textAlign: 'center',
-    }}
-  >
+  <EmptyStateContainer alignItems="center" justifyContent="center" spacing={2}>
     <Box sx={{ color: 'primary.main' }}>{icon}</Box>
     <Typography variant="h6">{title}</Typography>
     <Typography color="text.secondary" maxWidth={360}>
@@ -39,5 +28,21 @@ export const EmptyState = ({
         {actionLabel}
       </Button>
     ) : null}
-  </Stack>
+  </EmptyStateContainer>
 );
+
+const EmptyStateContainer = styled(Stack)(({ theme }) => ({
+  minHeight: 220,
+  padding: theme.spacing(4),
+  textAlign: 'center',
+  borderRadius: theme.app.radius.md,
+  border: `1px dashed ${alpha(theme.palette.primary.main, theme.palette.mode === 'light' ? 0.28 : 0.34)}`,
+  backgroundColor:
+    theme.palette.mode === 'light'
+      ? alpha('#ffffff', 0.64)
+      : alpha('#ffffff', 0.05),
+  boxShadow:
+    theme.palette.mode === 'light'
+      ? 'inset 0 1px 0 rgba(255,255,255,0.45)'
+      : 'inset 0 1px 0 rgba(255,255,255,0.04)',
+}));

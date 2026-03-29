@@ -18,15 +18,21 @@ import {
   useTheme,
 } from '@mui/material';
 import { DatePicker, TimePicker } from '@mui/x-date-pickers';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, useForm, type Resolver } from 'react-hook-form';
 import { useEffect, useMemo, useState } from 'react';
 import type { Dayjs } from 'dayjs';
 import { z } from 'zod';
 import type { EventInput } from '../../app/store/useTravelStore';
 import { searchMockLocations } from '../../features/events/placeAutocomplete';
 import { dayjs, formatDateTime } from '../../lib/date';
-import { eventCategoryOptions, eventColorPalette, getDefaultEventColor, getEventTextColor, timezoneOptions } from '../../lib/events';
-import type { EventAuditLog, ItineraryEvent, LocationSuggestion } from '../../types/event';
+import {
+  eventCategoryOptions,
+  getEventColorOptions,
+  getEventTextColor,
+  normalizeEventColor,
+  timezoneOptions,
+} from '../../lib/events';
+import type { EventAuditLog, EventCategory, ItineraryEvent, LocationSuggestion } from '../../types/event';
 import type { Itinerary } from '../../types/itinerary';
 import type { User } from '../../types/user';
 import { EventCategoryChip } from './EventCategoryChip';
@@ -49,7 +55,10 @@ const eventSchema = z
   .object({
     title: z.string().min(2, 'Title is required'),
     description: z.string().min(2, 'Description is required'),
-    category: z.enum(eventCategoryOptions),
+    category: z
+      .string()
+      .min(1, 'Category is required')
+      .refine((value) => eventCategoryOptions.includes(value as EventCategory), 'Category is required'),
     color: z.string().min(4, 'Color is required'),
     startDate: z.custom<Dayjs | null>((value) => Boolean(value), 'Start date is required'),
     startTime: z.custom<Dayjs | null>((value) => Boolean(value), 'Start time is required'),
@@ -60,10 +69,27 @@ const eventSchema = z
     locationAddress: z.string(),
     locationLat: z.number().nullable(),
     locationLng: z.number().nullable(),
-    cost: z.number().min(0, 'Cost cannot be negative'),
+    cost: z.preprocess(
+      (value) => {
+        if (value === '' || value === null || value === undefined) {
+          return 0;
+        }
+
+        if (typeof value === 'number') {
+          return value;
+        }
+
+        return Number(value);
+      },
+      z.number().min(0, 'Cost cannot be negative'),
+    ),
   })
   .refine(
     (values) => {
+      if (!values.startDate || !values.startTime || !values.endDate || !values.endTime) {
+        return true;
+      }
+
       const startDateTime = combineDateAndTime(values.startDate, values.startTime);
       const endDateTime = combineDateAndTime(values.endDate, values.endTime);
 
@@ -75,7 +101,24 @@ const eventSchema = z
     },
   );
 
-type EventFormValues = z.infer<typeof eventSchema>;
+type ParsedEventFormValues = z.output<typeof eventSchema>;
+
+interface EventFormValues {
+  title: string;
+  description: string;
+  category: EventCategory | '';
+  color: string;
+  startDate: Dayjs | null;
+  startTime: Dayjs | null;
+  endDate: Dayjs | null;
+  endTime: Dayjs | null;
+  timezone: string;
+  location: string;
+  locationAddress: string;
+  locationLat: number | null;
+  locationLng: number | null;
+  cost: string;
+}
 
 const combineDateAndTime = (dateValue: Dayjs | null, timeValue: Dayjs | null) => {
   if (!dateValue || !timeValue) {
@@ -86,9 +129,9 @@ const combineDateAndTime = (dateValue: Dayjs | null, timeValue: Dayjs | null) =>
 };
 
 const buildDefaultValues = (
-  itinerary: Itinerary,
+  _itinerary: Itinerary,
   event: ItineraryEvent | null,
-  draftRange: { start: string; end: string } | null,
+  _draftRange: { start: string; end: string } | null,
 ): EventFormValues => {
   if (event) {
     const startDateTime = dayjs(event.startDateTime);
@@ -98,7 +141,7 @@ const buildDefaultValues = (
       title: event.title,
       description: event.description,
       category: event.category,
-      color: event.color,
+      color: normalizeEventColor(event.color),
       startDate: startDateTime,
       startTime: startDateTime,
       endDate: endDateTime,
@@ -108,28 +151,25 @@ const buildDefaultValues = (
       locationAddress: event.locationAddress,
       locationLat: event.locationLat,
       locationLng: event.locationLng,
-      cost: event.cost,
+      cost: event.cost === 0 ? '0' : String(event.cost),
     };
   }
-
-  const start = draftRange ? dayjs(draftRange.start) : dayjs(`${itinerary.startDate}T09:00:00`);
-  const end = draftRange ? dayjs(draftRange.end) : start.add(1, 'hour');
 
   return {
     title: '',
     description: '',
-    category: 'Activity',
-    color: getDefaultEventColor('Activity'),
-    startDate: start,
-    startTime: start,
-    endDate: end,
-    endTime: end,
-    timezone: 'Asia/Manila',
+    category: '',
+    color: '',
+    startDate: null,
+    startTime: null,
+    endDate: null,
+    endTime: null,
+    timezone: '',
     location: '',
     locationAddress: '',
     locationLat: null,
     locationLng: null,
-    cost: 0,
+    cost: '',
   };
 };
 
@@ -160,29 +200,16 @@ export const EventDrawer = ({
     setValue,
     formState: { errors, isSubmitting },
   } = useForm<EventFormValues>({
-    resolver: zodResolver(eventSchema),
+    resolver: zodResolver(eventSchema) as unknown as Resolver<EventFormValues>,
     defaultValues,
   });
 
   const locationAddress = watch('locationAddress');
-  const selectedColor = watch('color');
 
   useEffect(() => {
     reset(defaultValues);
     setLocationInput(defaultValues.location);
   }, [defaultValues, reset]);
-
-  useEffect(() => {
-    if (!event) {
-      const subscription = watch((values, info) => {
-        if (info.name === 'category' && values.category) {
-          setValue('color', getDefaultEventColor(values.category), { shouldDirty: true });
-        }
-      });
-
-      return () => subscription.unsubscribe();
-    }
-  }, [event, setValue, watch]);
 
   useEffect(() => {
     if (!open || !event) {
@@ -245,8 +272,9 @@ export const EventDrawer = ({
           spacing={2.2}
           sx={{ overflowY: 'auto', pr: 0.5 }}
           onSubmit={handleSubmit((values) => {
-            const startDateTime = combineDateAndTime(values.startDate, values.startTime);
-            const endDateTime = combineDateAndTime(values.endDate, values.endTime);
+            const parsedValues = eventSchema.parse(values) as ParsedEventFormValues;
+            const startDateTime = combineDateAndTime(parsedValues.startDate, parsedValues.startTime);
+            const endDateTime = combineDateAndTime(parsedValues.endDate, parsedValues.endTime);
 
             if (!startDateTime || !endDateTime) {
               return;
@@ -254,18 +282,18 @@ export const EventDrawer = ({
 
             onSave(
               {
-                title: values.title,
-                description: values.description,
-                category: values.category,
-                color: values.color,
+                title: parsedValues.title,
+                description: parsedValues.description,
+                category: parsedValues.category as EventCategory,
+                color: normalizeEventColor(parsedValues.color),
                 startDateTime: startDateTime.format(),
                 endDateTime: endDateTime.format(),
-                timezone: values.timezone,
-                location: values.location,
-                locationAddress: values.locationAddress,
-                locationLat: values.locationLat,
-                locationLng: values.locationLng,
-                cost: values.cost,
+                timezone: parsedValues.timezone,
+                location: parsedValues.location,
+                locationAddress: parsedValues.locationAddress,
+                locationLat: parsedValues.locationLat,
+                locationLng: parsedValues.locationLng,
+                cost: parsedValues.cost,
               },
               event?.id,
             );
@@ -290,69 +318,102 @@ export const EventDrawer = ({
             {...register('description')}
           />
 
-          <TextField
-            disabled={!canManage}
-            error={Boolean(errors.category)}
-            helperText={errors.category?.message}
-            label="Category"
-            select
-            {...register('category')}
-          >
-            {eventCategoryOptions.map((category) => (
-              <MenuItem key={category} value={category}>
-                {category}
-              </MenuItem>
-            ))}
-          </TextField>
+          <Controller
+            control={control}
+            name="category"
+            render={({ field }) => (
+              <TextField
+                disabled={!canManage}
+                error={Boolean(errors.category)}
+                helperText={errors.category?.message}
+                label="Category"
+                onChange={field.onChange}
+                select
+                slotProps={{
+                  inputLabel: { shrink: true },
+                  select: {
+                    displayEmpty: true,
+                    renderValue: (value) => {
+                      const selectedValue = typeof value === 'string' ? value : '';
 
-          <Box>
-            <Typography gutterBottom fontWeight={600} variant="body2">
-              Calendar color
-            </Typography>
-            <Stack direction="row" flexWrap="wrap" gap={1}>
-              {eventColorPalette.map((color) => {
-                const isSelected = selectedColor === color;
-                const textColor = getEventTextColor(color);
+                      return selectedValue ? (
+                        selectedValue
+                      ) : (
+                        <Typography color="text.secondary" variant="body2">
+                          Select category
+                        </Typography>
+                      );
+                    },
+                  },
+                }}
+                value={field.value || ''}
+              >
+                <MenuItem disabled value="">
+                  Select category
+                </MenuItem>
+                {eventCategoryOptions.map((category) => (
+                  <MenuItem key={category} value={category}>
+                    {category}
+                  </MenuItem>
+                ))}
+              </TextField>
+            )}
+          />
 
-                return (
-                  <Tooltip key={color} title={color}>
-                    <Button
-                      disabled={!canManage}
-                      onClick={() => setValue('color', color, { shouldDirty: true, shouldValidate: true })}
-                      sx={{
-                        minWidth: 0,
-                        width: 42,
-                        height: 42,
-                        borderRadius: '50%',
-                        bgcolor: color,
-                        color: textColor,
-                        border: isSelected
-                          ? `3px solid ${theme.palette.mode === 'light' ? 'rgba(22, 48, 75, 0.9)' : 'rgba(237, 245, 255, 0.92)'}`
-                          : `2px solid ${theme.palette.mode === 'light' ? 'rgba(255,255,255,0.95)' : 'rgba(18, 29, 43, 0.92)'}`,
-                        boxShadow: isSelected
-                          ? `0 0 0 3px ${alpha(theme.palette.primary.main, 0.24)}`
-                          : theme.palette.mode === 'light'
-                            ? '0 6px 18px rgba(21, 53, 90, 0.14)'
-                            : '0 8px 20px rgba(0, 0, 0, 0.34)',
-                        '&:hover': {
-                          bgcolor: color,
-                        },
-                      }}
-                      type="button"
-                      variant="contained"
-                    >
-                      {isSelected ? '✓' : ''}
-                    </Button>
-                  </Tooltip>
-                );
-              })}
-            </Stack>
-            {errors.color ? (
-              <Typography color="error.main" mt={1} variant="caption">
-                {errors.color.message}
-              </Typography>
-            ) : null}
-          </Box>
+          <Controller
+            control={control}
+            name="color"
+            render={({ field }) => (
+              <Box>
+                <Typography gutterBottom fontWeight={600} variant="body2">
+                  Calendar color
+                </Typography>
+                <Stack direction="row" flexWrap="wrap" gap={1}>
+                  {getEventColorOptions(field.value).map((color) => {
+                    const isSelected = Boolean(field.value) && normalizeEventColor(field.value) === normalizeEventColor(color);
+                    const textColor = getEventTextColor(color);
+
+                    return (
+                      <Tooltip key={color} title={color}>
+                        <Button
+                          disabled={!canManage}
+                          onClick={() => field.onChange(color)}
+                          sx={{
+                            minWidth: 0,
+                            width: 42,
+                            height: 42,
+                            borderRadius: '50%',
+                            bgcolor: color,
+                            color: textColor,
+                            border: isSelected
+                              ? `3px solid ${theme.palette.mode === 'light' ? 'rgba(22, 48, 75, 0.9)' : 'rgba(237, 245, 255, 0.92)'}`
+                              : `2px solid ${theme.palette.mode === 'light' ? 'rgba(255,255,255,0.95)' : 'rgba(18, 29, 43, 0.92)'}`,
+                            boxShadow: isSelected
+                              ? `0 0 0 3px ${alpha(theme.palette.primary.main, 0.24)}`
+                              : theme.palette.mode === 'light'
+                                ? '0 6px 18px rgba(21, 53, 90, 0.14)'
+                                : '0 8px 20px rgba(0, 0, 0, 0.34)',
+                            '&:hover': {
+                              bgcolor: color,
+                            },
+                          }}
+                          type="button"
+                          variant="contained"
+                        >
+                          {isSelected ? '✓' : ''}
+                        </Button>
+                      </Tooltip>
+                    );
+                  })}
+                </Stack>
+                {errors.color ? (
+                  <Typography color="error.main" mt={1} variant="caption">
+                    {errors.color.message}
+                  </Typography>
+                ) : null}
+              </Box>
+            )}
+          />
 
           <Stack spacing={2}>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
@@ -446,20 +507,47 @@ export const EventDrawer = ({
             </Stack>
           </Stack>
 
-          <TextField
-            disabled={!canManage}
-            error={Boolean(errors.timezone)}
-            helperText={errors.timezone?.message}
-            label="Timezone"
-            select
-            {...register('timezone')}
-          >
-            {timezoneOptions.map((timezone) => (
-              <MenuItem key={timezone} value={timezone}>
-                {timezone}
-              </MenuItem>
-            ))}
-          </TextField>
+          <Controller
+            control={control}
+            name="timezone"
+            render={({ field }) => (
+              <TextField
+                disabled={!canManage}
+                error={Boolean(errors.timezone)}
+                helperText={errors.timezone?.message}
+                label="Timezone"
+                onChange={field.onChange}
+                select
+                slotProps={{
+                  inputLabel: { shrink: true },
+                  select: {
+                    displayEmpty: true,
+                    renderValue: (value) => {
+                      const selectedValue = typeof value === 'string' ? value : '';
+
+                      return selectedValue ? (
+                        selectedValue
+                      ) : (
+                        <Typography color="text.secondary" variant="body2">
+                          Select timezone
+                        </Typography>
+                      );
+                    },
+                  },
+                }}
+                value={field.value || ''}
+              >
+                <MenuItem disabled value="">
+                  Select timezone
+                </MenuItem>
+                {timezoneOptions.map((timezone) => (
+                  <MenuItem key={timezone} value={timezone}>
+                    {timezone}
+                  </MenuItem>
+                ))}
+              </TextField>
+            )}
+          />
 
           <Controller
             control={control}
@@ -516,13 +604,21 @@ export const EventDrawer = ({
 
           <TextField disabled={!canManage} label="Matched address" value={locationAddress} {...register('locationAddress')} />
 
-          <TextField
-            disabled={!canManage}
-            error={Boolean(errors.cost)}
-            helperText={errors.cost?.message}
-            label="Cost (USD)"
-            type="number"
-            {...register('cost', { valueAsNumber: true })}
+          <Controller
+            control={control}
+            name="cost"
+            render={({ field }) => (
+              <TextField
+                disabled={!canManage}
+                error={Boolean(errors.cost)}
+                helperText={errors.cost?.message}
+                inputProps={{ min: 0, step: '0.01' }}
+                label="Cost (USD)"
+                onChange={field.onChange}
+                type="number"
+                value={field.value}
+              />
+            )}
           />
 
           {event ? (
