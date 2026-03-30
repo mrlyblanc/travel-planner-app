@@ -32,6 +32,8 @@ import { dayjs, formatDateTime } from '../../lib/date';
 import {
   eventCategoryOptions,
   findEventConflicts,
+  formatTimezoneDisplayLabel,
+  formatTimezoneLabel,
   getEventColorOptions,
   getEventTextColor,
   normalizeEventColor,
@@ -263,6 +265,7 @@ export const EventDrawer = ({
   const [isSearchingLocations, setIsSearchingLocations] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showFullAuditHistory, setShowFullAuditHistory] = useState(false);
   const defaultValues = useMemo(() => buildDefaultValues(itinerary, event, draftRange), [draftRange, event, itinerary]);
 
   const {
@@ -316,6 +319,7 @@ export const EventDrawer = ({
       setConfirmDeleteOpen(false);
       setIsDeleting(false);
       setIsSearchingLocations(false);
+      setShowFullAuditHistory(false);
     }
   }, [open]);
 
@@ -324,6 +328,7 @@ export const EventDrawer = ({
       return;
     }
 
+    setShowFullAuditHistory(false);
     void onLoadHistory(event.id);
   }, [event, onLoadHistory, open]);
 
@@ -663,41 +668,43 @@ export const EventDrawer = ({
             control={control}
             name="timezone"
             render={({ field }) => (
-              <TextField
+              <Autocomplete
                 disabled={!canManage}
-                error={Boolean(errors.timezone)}
-                helperText={errors.timezone?.message ?? 'Store the event in the local timezone for the destination, city, or airport.'}
-                label="Timezone"
-                onChange={field.onChange}
-                select
-                slotProps={{
-                  inputLabel: { shrink: true },
-                  select: {
-                    displayEmpty: true,
-                    renderValue: (value) => {
-                      const selectedValue = typeof value === 'string' ? value : '';
+                filterOptions={(options, state) => {
+                  const query = state.inputValue.trim().toLowerCase();
+                  if (!query) {
+                    return options;
+                  }
 
-                      return selectedValue ? (
-                        selectedValue
-                      ) : (
-                        <Typography color="text.secondary" variant="body2">
-                          Select timezone
-                        </Typography>
-                      );
-                    },
-                  },
+                  return options.filter((option) => {
+                    const rawValue = option.toLowerCase();
+                    const friendlyValue = formatTimezoneLabel(option).toLowerCase();
+                    const displayValue = formatTimezoneDisplayLabel(option).toLowerCase();
+
+                    return rawValue.includes(query) || friendlyValue.includes(query) || displayValue.includes(query);
+                  });
                 }}
-                value={field.value || ''}
-              >
-                <MenuItem disabled value="">
-                  Select timezone
-                </MenuItem>
-                {timezoneOptions.map((timezone) => (
-                  <MenuItem key={timezone} value={timezone}>
-                    {timezone}
-                  </MenuItem>
-                ))}
-              </TextField>
+                getOptionLabel={(option) => formatTimezoneDisplayLabel(option)}
+                isOptionEqualToValue={(option, value) => option === value}
+                noOptionsText="No matching timezone"
+                onChange={(_, value) => field.onChange(value ?? '')}
+                options={timezoneOptions}
+                renderOption={(props, option) => (
+                  <Box component="li" {...props}>
+                    <Typography variant="body2">{formatTimezoneDisplayLabel(option)}</Typography>
+                  </Box>
+                )}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    error={Boolean(errors.timezone)}
+                    helperText={errors.timezone?.message ?? 'Search the destination timezone from the full IANA timezone list.'}
+                    label="Timezone"
+                    placeholder="Search timezone or city"
+                  />
+                )}
+                value={field.value || null}
+              />
             )}
           />
 
@@ -864,7 +871,7 @@ export const EventDrawer = ({
                     <Typography fontWeight={600} mt={0.8} variant="body2">
                       Audit history
                     </Typography>
-                    {auditHistory.slice(0, 4).map((historyItem) => (
+                    {(showFullAuditHistory ? auditHistory : auditHistory.slice(0, 3)).map((historyItem) => (
                       <Box
                         key={historyItem.id}
                         sx={{
@@ -880,6 +887,15 @@ export const EventDrawer = ({
                         </Typography>
                       </Box>
                     ))}
+                    {auditHistory.length > 3 ? (
+                      <Button
+                        onClick={() => setShowFullAuditHistory((current) => !current)}
+                        sx={{ alignSelf: 'flex-start', px: 0.5 }}
+                        variant="text"
+                      >
+                        {showFullAuditHistory ? 'See less' : `See more (${auditHistory.length - 3} more)`}
+                      </Button>
+                    ) : null}
                   </Stack>
                 ) : null}
               </Stack>

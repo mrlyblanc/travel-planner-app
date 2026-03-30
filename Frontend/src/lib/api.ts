@@ -226,6 +226,22 @@ export class ApiError extends Error {
 const apiUrl = (baseUrl: string, path: string) => `${baseUrl}/api${path}`;
 
 const normalizeEtag = (etag: string | null | undefined) => etag?.trim().replace(/^W\//i, '').replace(/^"|"$/g, '') ?? null;
+const normalizeUtcTimestamp = (value: string | null | undefined) => {
+  if (!value) {
+    return '';
+  }
+
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    return '';
+  }
+
+  if (!trimmedValue.includes('T')) {
+    return trimmedValue;
+  }
+
+  return /(?:Z|[+\-]\d{2}:\d{2})$/i.test(trimmedValue) ? trimmedValue : `${trimmedValue}Z`;
+};
 
 export const toIfMatchHeader = (version: string) => `"${version}"`;
 
@@ -240,7 +256,16 @@ const readAuthSession = (): AuthSession | null => {
   }
 
   try {
-    return JSON.parse(raw) as AuthSession;
+    const session = JSON.parse(raw) as AuthSession;
+    return {
+      ...session,
+      expiresAt: normalizeUtcTimestamp(session.expiresAt),
+      refreshTokenExpiresAt: normalizeUtcTimestamp(session.refreshTokenExpiresAt),
+      user: {
+        ...session.user,
+        createdAt: normalizeUtcTimestamp(session.user.createdAt),
+      },
+    };
   } catch {
     window.localStorage.removeItem(AUTH_STORAGE_KEY);
     return null;
@@ -347,7 +372,7 @@ const mapUserResponse = (user: UserResponseDto): User => ({
   email: user.email,
   avatar: user.avatar,
   version: user.version,
-  createdAt: user.createdAtUtc,
+  createdAt: normalizeUtcTimestamp(user.createdAtUtc),
 });
 
 const mapMemberResponse = (member: ItineraryMemberResponseDto): ItineraryMember => ({
@@ -371,8 +396,8 @@ const mapItineraryResponse = (itinerary: ItineraryResponseDto, members: Itinerar
   createdBy: itinerary.createdById,
   memberIds: members.map((member) => member.userId),
   memberCount: itinerary.memberCount,
-  createdAt: itinerary.createdAtUtc,
-  updatedAt: itinerary.updatedAtUtc,
+  createdAt: normalizeUtcTimestamp(itinerary.createdAtUtc),
+  updatedAt: normalizeUtcTimestamp(itinerary.updatedAtUtc),
 });
 
 const mapEventResponse = (event: EventResponseDto): ItineraryEvent => ({
@@ -393,8 +418,8 @@ const mapEventResponse = (event: EventResponseDto): ItineraryEvent => ({
   cost: event.cost ?? 0,
   createdBy: event.createdById,
   updatedBy: event.updatedById,
-  createdAt: event.createdAtUtc,
-  updatedAt: event.updatedAtUtc,
+  createdAt: normalizeUtcTimestamp(event.createdAtUtc),
+  updatedAt: normalizeUtcTimestamp(event.updatedAtUtc),
 });
 
 const mapAuditSnapshot = (snapshot: EventAuditSnapshotResponseDto): EventAuditSnapshot => ({
@@ -413,7 +438,7 @@ const mapAuditSnapshot = (snapshot: EventAuditSnapshotResponseDto): EventAuditSn
   locationLng: snapshot.locationLng ?? null,
   cost: snapshot.cost ?? null,
   updatedBy: snapshot.updatedById,
-  updatedAt: snapshot.updatedAtUtc,
+  updatedAt: normalizeUtcTimestamp(snapshot.updatedAtUtc),
 });
 
 const mapAuditLog = (auditLog: EventAuditLogResponseDto): EventAuditLog => ({
@@ -424,7 +449,7 @@ const mapAuditLog = (auditLog: EventAuditLogResponseDto): EventAuditLog => ({
   summary: auditLog.summary,
   snapshot: mapAuditSnapshot(auditLog.snapshot),
   changedBy: auditLog.changedByUserId,
-  changedAt: auditLog.changedAtUtc,
+  changedAt: normalizeUtcTimestamp(auditLog.changedAtUtc),
 });
 
 const toItineraryPayload = (input: ItineraryInputDto) => ({
@@ -478,8 +503,8 @@ export const travelApi = {
       accessToken: response.data.accessToken,
       refreshToken: response.data.refreshToken,
       tokenType: response.data.tokenType,
-      expiresAt: response.data.expiresAtUtc,
-      refreshTokenExpiresAt: response.data.refreshTokenExpiresAtUtc,
+      expiresAt: normalizeUtcTimestamp(response.data.expiresAtUtc),
+      refreshTokenExpiresAt: normalizeUtcTimestamp(response.data.refreshTokenExpiresAtUtc),
       user: mapUserResponse(response.data.user),
     };
 
@@ -506,8 +531,8 @@ export const travelApi = {
       accessToken: response.data.accessToken,
       refreshToken: response.data.refreshToken,
       tokenType: response.data.tokenType,
-      expiresAt: response.data.expiresAtUtc,
-      refreshTokenExpiresAt: response.data.refreshTokenExpiresAtUtc,
+      expiresAt: normalizeUtcTimestamp(response.data.expiresAtUtc),
+      refreshTokenExpiresAt: normalizeUtcTimestamp(response.data.refreshTokenExpiresAtUtc),
       user: mapUserResponse(response.data.user),
     };
 

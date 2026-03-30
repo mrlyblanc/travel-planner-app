@@ -30,7 +30,7 @@ export const eventCategoryMeta: Record<
   Other: { label: 'Other', color: '#5c6bc0', softColor: '#eef0ff' },
 };
 
-export const timezoneOptions = [
+const fallbackTimezoneOptions = [
   'Asia/Manila',
   'Asia/Tokyo',
   'Asia/Seoul',
@@ -38,6 +38,53 @@ export const timezoneOptions = [
   'Asia/Makassar',
   'UTC',
 ];
+
+export const timezoneOptions = Array.from(
+  new Set([
+    ...fallbackTimezoneOptions,
+    ...(typeof Intl.supportedValuesOf === 'function'
+      ? (Intl.supportedValuesOf('timeZone') as string[])
+      : []),
+  ]),
+).sort((left, right) => left.localeCompare(right));
+
+export const formatTimezoneLabel = (timezone: string) =>
+  timezone
+    .split('/')
+    .map((segment) => segment.replaceAll('_', ' '))
+    .join('/');
+
+const timezoneDisplayLabelCache = new Map<string, string>();
+
+const readTimezoneNamePart = (timezone: string, timeZoneName: 'long' | 'longOffset') =>
+  new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    timeZoneName,
+  })
+    .formatToParts(new Date())
+    .find((part) => part.type === 'timeZoneName')
+    ?.value;
+
+export const formatTimezoneDisplayLabel = (timezone: string) => {
+  const normalizedTimezone = timezone.trim();
+  if (!normalizedTimezone) {
+    return '';
+  }
+
+  const cachedLabel = timezoneDisplayLabelCache.get(normalizedTimezone);
+  if (cachedLabel) {
+    return cachedLabel;
+  }
+
+  const offsetLabel = readTimezoneNamePart(normalizedTimezone, 'longOffset') ?? 'GMT';
+  const longName = readTimezoneNamePart(normalizedTimezone, 'long');
+  const fallbackName = formatTimezoneLabel(normalizedTimezone);
+  const displayName = longName && longName !== offsetLabel ? longName : fallbackName;
+  const label = `(${offsetLabel}) ${displayName}`;
+
+  timezoneDisplayLabelCache.set(normalizedTimezone, label);
+  return label;
+};
 
 export const normalizeEventColor = (value: string | null | undefined) => value?.trim().toUpperCase() ?? '';
 
