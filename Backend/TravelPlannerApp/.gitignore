@@ -6,3 +6,8 @@ logs/
 **/bin/
 **/obj/
 **/TestResults/
+*.csproj.user
+*.csproj.user.Backup.tmp
+**/Properties/PublishProfiles/
+**/Properties/ServiceDependencies/
+**/Properties/serviceDependencies*.json
