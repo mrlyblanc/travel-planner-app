@@ -7,7 +7,10 @@ export const uid = (prefix: string) =>
 
 export const clampNumber = (value: number, min = 0) => Math.max(min, value);
 
-export const roundCurrency = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100;
+export const roundCurrency = (value: number, fractionDigits = 2) => {
+  const scale = 10 ** fractionDigits;
+  return Math.round((value + Number.EPSILON) * scale) / scale;
+};
 
 export const initialsFromName = (value: string) =>
   value

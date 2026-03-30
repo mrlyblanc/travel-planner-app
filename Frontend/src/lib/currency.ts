@@ -1,9 +1,11 @@
+import currencyCatalog from '../../../shared/currency-catalog.json';
 import { roundCurrency } from './utils';
 import type { ItineraryEvent } from '../types/event';
 
 export interface CurrencyOption {
   code: string;
   name: string;
+  minorUnit: number;
 }
 
 export interface CurrencyTotal {
@@ -13,23 +15,43 @@ export interface CurrencyTotal {
 
 const formatterCache = new Map<string, Intl.NumberFormat>();
 
-export const supportedCurrencies: CurrencyOption[] = [
-  { code: 'USD', name: 'US Dollar' },
-  { code: 'JPY', name: 'Japanese Yen' },
-  { code: 'KRW', name: 'South Korean Won' },
-  { code: 'SGD', name: 'Singapore Dollar' },
-  { code: 'IDR', name: 'Indonesian Rupiah' },
-  { code: 'PHP', name: 'Philippine Peso' },
-  { code: 'EUR', name: 'Euro' },
-  { code: 'GBP', name: 'British Pound' },
-  { code: 'AUD', name: 'Australian Dollar' },
-  { code: 'CAD', name: 'Canadian Dollar' },
-];
+export const supportedCurrencies = currencyCatalog as CurrencyOption[];
+
+const currencyLookup = supportedCurrencies.reduce<Record<string, CurrencyOption>>((accumulator, currency) => {
+  accumulator[currency.code] = currency;
+  return accumulator;
+}, {});
 
 export const normalizeCurrencyCode = (currencyCode: string | null | undefined) => {
   const normalized = currencyCode?.trim().toUpperCase() ?? '';
   return normalized || null;
 };
+
+export const getCurrencyOption = (currencyCode: string | null | undefined) => {
+  const normalized = normalizeCurrencyCode(currencyCode);
+  return normalized ? currencyLookup[normalized] ?? null : null;
+};
+
+export const getCurrencyMinorUnit = (currencyCode: string | null | undefined) =>
+  getCurrencyOption(currencyCode)?.minorUnit ?? 2;
+
+export const getCurrencyStep = (currencyCode: string | null | undefined) => {
+  const minorUnit = getCurrencyMinorUnit(currencyCode);
+  if (minorUnit <= 0) {
+    return '1';
+  }
+
+  return `0.${'0'.repeat(Math.max(0, minorUnit - 1))}1`;
+};
+
+export const roundCurrencyAmount = (amount: number, currencyCode: string | null | undefined) =>
+  roundCurrency(amount, getCurrencyMinorUnit(currencyCode));
+
+export const hasValidCurrencyPrecision = (amount: number, currencyCode: string | null | undefined) =>
+  roundCurrencyAmount(amount, currencyCode) === amount;
+
+export const formatEditableCurrencyAmount = (amount: number, currencyCode: string | null | undefined) =>
+  roundCurrencyAmount(amount, currencyCode).toFixed(getCurrencyMinorUnit(currencyCode));
 
 export const getCurrencyOptionLabel = (currencyCode: string) => {
   const normalized = normalizeCurrencyCode(currencyCode);
@@ -37,19 +59,21 @@ export const getCurrencyOptionLabel = (currencyCode: string) => {
     return 'No currency selected';
   }
 
-  const option = supportedCurrencies.find((entry) => entry.code === normalized);
+  const option = currencyLookup[normalized];
   return option ? `${option.code} • ${option.name}` : normalized;
 };
 
 export const formatCurrencyAmount = (amount: number, currencyCode: string | null | undefined) => {
   const normalizedCurrencyCode = normalizeCurrencyCode(currencyCode);
-  const roundedAmount = roundCurrency(amount);
+  const minorUnit = getCurrencyMinorUnit(normalizedCurrencyCode);
+  const roundedAmount = roundCurrencyAmount(amount, normalizedCurrencyCode);
 
   if (!normalizedCurrencyCode) {
-    return roundedAmount.toFixed(2);
+    return roundedAmount.toFixed(minorUnit);
   }
 
-  const cachedFormatter = formatterCache.get(normalizedCurrencyCode);
+  const formatterKey = `${normalizedCurrencyCode}:${minorUnit}`;
+  const cachedFormatter = formatterCache.get(formatterKey);
   if (cachedFormatter) {
     return cachedFormatter.format(roundedAmount);
   }
@@ -58,14 +82,14 @@ export const formatCurrencyAmount = (amount: number, currencyCode: string | null
     const formatter = new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: normalizedCurrencyCode,
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+      minimumFractionDigits: minorUnit,
+      maximumFractionDigits: minorUnit,
     });
 
-    formatterCache.set(normalizedCurrencyCode, formatter);
+    formatterCache.set(formatterKey, formatter);
     return formatter.format(roundedAmount);
   } catch {
-    return `${normalizedCurrencyCode} ${roundedAmount.toFixed(2)}`;
+    return `${normalizedCurrencyCode} ${roundedAmount.toFixed(minorUnit)}`;
   }
 };
 
@@ -79,7 +103,7 @@ export const getCostTotalsByCurrency = (events: ItineraryEvent[]) =>
 
       accumulator.set(
         normalizedCurrencyCode,
-        roundCurrency((accumulator.get(normalizedCurrencyCode) ?? 0) + event.cost),
+        roundCurrencyAmount((accumulator.get(normalizedCurrencyCode) ?? 0) + event.cost, normalizedCurrencyCode),
       );
       return accumulator;
     }, new Map<string, number>()),

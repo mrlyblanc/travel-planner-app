@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using TravelPlannerApp.Application.Common;
 using TravelPlannerApp.Domain.Enums;
 
 namespace TravelPlannerApp.Application.Contracts.Events;
@@ -48,6 +49,10 @@ public abstract class EventUpsertRequest : IValidatableObject
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
+        var normalizedCurrencyCode = string.IsNullOrWhiteSpace(CurrencyCode) ? null : CurrencyCode.Trim().ToUpperInvariant();
+        CurrencyCatalogEntry? currency = null;
+        var hasSupportedCurrency = normalizedCurrencyCode is not null && CurrencyCatalog.TryGet(normalizedCurrencyCode, out currency);
+
         if (EndDateTime <= StartDateTime)
         {
             yield return new ValidationResult(
@@ -55,11 +60,32 @@ public abstract class EventUpsertRequest : IValidatableObject
                 [nameof(EndDateTime)]);
         }
 
-        if (!string.IsNullOrWhiteSpace(CurrencyCode) && CurrencyCode.Trim().Length != 3)
+        if (normalizedCurrencyCode is not null && normalizedCurrencyCode.Length != 3)
         {
             yield return new ValidationResult(
                 "CurrencyCode must be a valid ISO 4217 currency code.",
                 [nameof(CurrencyCode)]);
+        }
+
+        if (Cost is > 0 && string.IsNullOrWhiteSpace(CurrencyCode))
+        {
+            yield return new ValidationResult(
+                "CurrencyCode is required when Cost is set.",
+                [nameof(CurrencyCode)]);
+        }
+
+        if (normalizedCurrencyCode is not null && !hasSupportedCurrency)
+        {
+            yield return new ValidationResult(
+                "CurrencyCode must be a supported ISO 4217 currency code.",
+                [nameof(CurrencyCode)]);
+        }
+
+        if (Cost is > 0 && currency is not null && !CurrencyCatalog.SupportsAmount(Cost.Value, normalizedCurrencyCode))
+        {
+            yield return new ValidationResult(
+                $"Cost supports up to {currency.MinorUnit} decimal place{(currency.MinorUnit == 1 ? string.Empty : "s")} for {currency.Code}.",
+                [nameof(Cost)]);
         }
     }
 }

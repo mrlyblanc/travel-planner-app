@@ -28,7 +28,17 @@ import type { Dayjs } from 'dayjs';
 import { z } from 'zod';
 import type { EventInput } from '../../app/store/useTravelStore';
 import { isGeoapifyConfigured, searchLocationSuggestions } from '../../features/events/placeAutocomplete';
-import { getCurrencyOptionLabel, normalizeCurrencyCode, supportedCurrencies } from '../../lib/currency';
+import {
+  formatEditableCurrencyAmount,
+  getCurrencyMinorUnit,
+  getCurrencyOption,
+  getCurrencyOptionLabel,
+  getCurrencyStep,
+  hasValidCurrencyPrecision,
+  normalizeCurrencyCode,
+  roundCurrencyAmount,
+  supportedCurrencies,
+} from '../../lib/currency';
 import { dayjs, formatDateTime } from '../../lib/date';
 import {
   eventCategoryOptions,
@@ -40,7 +50,6 @@ import {
   normalizeEventColor,
   timezoneOptions,
 } from '../../lib/events';
-import { roundCurrency } from '../../lib/utils';
 import type { EventAuditLog, EventCategory, ItineraryEvent, LocationSuggestion } from '../../types/event';
 import type { Itinerary } from '../../types/itinerary';
 import type { User } from '../../types/user';
@@ -118,6 +127,15 @@ const eventSchema = z
         code: z.ZodIssueCode.custom,
         message: 'Currency is required when a cost is set',
         path: ['currencyCode'],
+      });
+    }
+
+    if (values.cost > 0 && normalizeCurrencyCode(values.currencyCode) && !hasValidCurrencyPrecision(values.cost, values.currencyCode)) {
+      const minorUnit = getCurrencyMinorUnit(values.currencyCode);
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Cost supports up to ${minorUnit} decimal place${minorUnit === 1 ? '' : 's'} for ${normalizeCurrencyCode(values.currencyCode)}.`,
+        path: ['cost'],
       });
     }
   });
@@ -215,7 +233,7 @@ const buildDefaultValues = (
       locationLat: event.locationLat,
       locationLng: event.locationLng,
       currencyCode: event.currencyCode ?? '',
-      cost: roundCurrency(event.cost).toFixed(2),
+      cost: formatEditableCurrencyAmount(event.cost, event.currencyCode),
     };
   }
 
@@ -297,10 +315,11 @@ export const EventDrawer = ({
   });
 
   const locationAddress = watch('locationAddress');
-  const [startDateValue, startTimeValue, endDateValue, endTimeValue] = useWatch({
+  const [startDateValue, startTimeValue, endDateValue, endTimeValue, selectedCurrencyCode] = useWatch({
     control,
-    name: ['startDate', 'startTime', 'endDate', 'endTime'],
+    name: ['startDate', 'startTime', 'endDate', 'endTime', 'currencyCode'],
   });
+  const selectedCurrencyOption = useMemo(() => getCurrencyOption(selectedCurrencyCode), [selectedCurrencyCode]);
   const hasEventBeenUpdated = useMemo(() => {
     if (!event) {
       return false;
@@ -440,7 +459,7 @@ export const EventDrawer = ({
                   locationLat: parsedValues.locationLat,
                   locationLng: parsedValues.locationLng,
                   currencyCode: normalizeCurrencyCode(parsedValues.currencyCode),
-                  cost: roundCurrency(parsedValues.cost),
+                  cost: roundCurrencyAmount(parsedValues.cost, parsedValues.currencyCode),
                 },
                 event?.id,
               );
@@ -812,27 +831,45 @@ export const EventDrawer = ({
               control={control}
               name="currencyCode"
               render={({ field }) => (
-                <TextField
+                <Autocomplete
                   disabled={!canManage}
-                  error={Boolean(errors.currencyCode)}
-                  helperText={errors.currencyCode?.message ?? 'Choose the currency used for this booking, meal, or activity.'}
-                  label="Currency"
-                  onChange={field.onChange}
-                  select
-                  sx={{ flex: 0.95 }}
-                  value={field.value}
-                >
-                  <MenuItem value="">
-                    <Typography color="text.secondary" variant="body2">
-                      Select currency
-                    </Typography>
-                  </MenuItem>
-                  {supportedCurrencies.map((currency) => (
-                    <MenuItem key={currency.code} value={currency.code}>
-                      {getCurrencyOptionLabel(currency.code)}
-                    </MenuItem>
-                  ))}
-                </TextField>
+                  filterOptions={(options, state) => {
+                    const query = state.inputValue.trim().toLowerCase();
+                    if (!query) {
+                      return options;
+                    }
+
+                    return options.filter((option) =>
+                      option.code.toLowerCase().includes(query) || option.name.toLowerCase().includes(query),
+                    );
+                  }}
+                  getOptionLabel={(option) => getCurrencyOptionLabel(option.code)}
+                  isOptionEqualToValue={(option, value) => option.code === value.code}
+                  noOptionsText="No matching currency"
+                  onChange={(_, value) => field.onChange(value?.code ?? '')}
+                  options={supportedCurrencies}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      error={Boolean(errors.currencyCode)}
+                      helperText={errors.currencyCode?.message ?? 'Search by ISO code or currency name.'}
+                      label="Currency"
+                      placeholder="Search currency"
+                    />
+                  )}
+                  renderOption={(props, option) => (
+                    <Box component="li" {...props}>
+                      <Stack spacing={0.2}>
+                        <Typography variant="body2">{getCurrencyOptionLabel(option.code)}</Typography>
+                        <Typography color="text.secondary" variant="caption">
+                          {option.minorUnit} decimal place{option.minorUnit === 1 ? '' : 's'}
+                        </Typography>
+                      </Stack>
+                    </Box>
+                  )}
+                  sx={{ flex: 1 }}
+                  value={selectedCurrencyOption}
+                />
               )}
             />
 
@@ -843,8 +880,11 @@ export const EventDrawer = ({
                 <TextField
                   disabled={!canManage}
                   error={Boolean(errors.cost)}
-                  helperText={errors.cost?.message ?? 'Optional budget estimate for this stop, booking, or activity.'}
-                  inputProps={{ min: 0, step: '0.01' }}
+                  helperText={
+                    errors.cost?.message ??
+                    `Optional budget estimate for this stop, booking, or activity${selectedCurrencyOption ? ` in ${selectedCurrencyOption.code}` : ''}.`
+                  }
+                  inputProps={{ min: 0, step: getCurrencyStep(selectedCurrencyCode) }}
                   label="Cost"
                   onChange={field.onChange}
                   onBlur={(blurEvent) => {
@@ -860,7 +900,7 @@ export const EventDrawer = ({
                       return;
                     }
 
-                    field.onChange(roundCurrency(parsedValue).toFixed(2));
+                    field.onChange(formatEditableCurrencyAmount(parsedValue, selectedCurrencyCode));
                   }}
                   placeholder="0.00"
                   sx={{ flex: 1.05 }}

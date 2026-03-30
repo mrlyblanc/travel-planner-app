@@ -420,6 +420,52 @@ public sealed class MinimalApiEndpointsTests
     }
 
     [Fact]
+    public async Task CreateEvent_WithUnsupportedCurrencyCode_ReturnsValidationProblem()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
+
+        var response = await client.PostAsJsonAsync("/api/itineraries/itinerary-tokyo/events", new CreateEventRequest
+        {
+            Title = "Broken currency",
+            Category = EventCategory.Activity,
+            StartDateTime = new DateTime(2026, 4, 15, 18, 0, 0),
+            EndDateTime = new DateTime(2026, 4, 15, 19, 0, 0),
+            Timezone = "Asia/Tokyo",
+            Cost = 10m,
+            CurrencyCode = "ZZZ"
+        }, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var payload = await response.Content.ReadFromJsonAsync<ValidationProblemResponse>(JsonOptions);
+        Assert.NotNull(payload);
+        Assert.Contains("currencyCode", payload!.Errors.Keys, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task CreateEvent_WithTooManyMinorUnits_ReturnsValidationProblem()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
+
+        var response = await client.PostAsJsonAsync("/api/itineraries/itinerary-tokyo/events", new CreateEventRequest
+        {
+            Title = "Broken precision",
+            Category = EventCategory.Activity,
+            StartDateTime = new DateTime(2026, 4, 15, 18, 0, 0),
+            EndDateTime = new DateTime(2026, 4, 15, 19, 0, 0),
+            Timezone = "Asia/Tokyo",
+            Cost = 10.25m,
+            CurrencyCode = "JPY"
+        }, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var payload = await response.Content.ReadFromJsonAsync<ValidationProblemResponse>(JsonOptions);
+        Assert.NotNull(payload);
+        Assert.Contains("cost", payload!.Errors.Keys, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task CreateEvent_WithValidPayload_CreatesEventAndAuditHistory()
     {
         using var factory = new TravelPlannerApiFactory();
@@ -508,7 +554,8 @@ public sealed class MinimalApiEndpointsTests
             LocationAddress = "Dogenzaka, Shibuya City, Tokyo",
             LocationLat = 35.6595m,
             LocationLng = 139.7005m,
-            Cost = 75m
+            Cost = 75m,
+            CurrencyCode = "JPY"
         }, JsonOptions);
 
         await AssertProblemAsync(response, (HttpStatusCode)428, "Precondition Required");
@@ -535,7 +582,8 @@ public sealed class MinimalApiEndpointsTests
             LocationAddress = "Dogenzaka, Shibuya City, Tokyo",
             LocationLat = 35.6595m,
             LocationLng = 139.7005m,
-            Cost = 75m
+            Cost = 75m,
+            CurrencyCode = "JPY"
         }, staleEtag));
         firstResponse.EnsureSuccessStatusCode();
 
@@ -552,7 +600,8 @@ public sealed class MinimalApiEndpointsTests
             LocationAddress = "Dogenzaka, Shibuya City, Tokyo",
             LocationLat = 35.6595m,
             LocationLng = 139.7005m,
-            Cost = 75m
+            Cost = 75m,
+            CurrencyCode = "JPY"
         }, staleEtag));
 
         await AssertProblemAsync(staleResponse, HttpStatusCode.PreconditionFailed, "Precondition Failed");

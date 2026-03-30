@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using TravelPlannerApp.Application.Common.Exceptions;
 using TravelPlannerApp.Application.Common.Utilities;
 using TravelPlannerApp.Application.Contracts.Events;
@@ -11,6 +12,44 @@ namespace TravelPlannerApp.Application.Tests.Common;
 
 public sealed class UtilityAndEdgeCaseTests
 {
+    [Fact]
+    public void EventUpsertRequest_WithUnsupportedCurrencyCode_ReturnsValidationError()
+    {
+        var request = new CreateEventRequest
+        {
+            Title = "Dinner",
+            Category = EventCategory.Restaurant,
+            StartDateTime = new DateTime(2026, 4, 15, 18, 0, 0),
+            EndDateTime = new DateTime(2026, 4, 15, 20, 0, 0),
+            Timezone = "Asia/Tokyo",
+            Cost = 50m,
+            CurrencyCode = "ZZZ"
+        };
+
+        var validationResults = Validate(request);
+
+        Assert.Contains(validationResults, result => result.MemberNames.Contains(nameof(CreateEventRequest.CurrencyCode)));
+    }
+
+    [Fact]
+    public void EventUpsertRequest_WithTooManyMinorUnits_ReturnsValidationError()
+    {
+        var request = new CreateEventRequest
+        {
+            Title = "Dinner",
+            Category = EventCategory.Restaurant,
+            StartDateTime = new DateTime(2026, 4, 15, 18, 0, 0),
+            EndDateTime = new DateTime(2026, 4, 15, 20, 0, 0),
+            Timezone = "Asia/Tokyo",
+            Cost = 50.25m,
+            CurrencyCode = "JPY"
+        };
+
+        var validationResults = Validate(request);
+
+        Assert.Contains(validationResults, result => result.MemberNames.Contains(nameof(CreateEventRequest.Cost)));
+    }
+
     [Fact]
     public void AvatarGenerator_WhenNameIsBlankOrSingleWord_ReturnsExpectedInitials()
     {
@@ -218,5 +257,13 @@ public sealed class UtilityAndEdgeCaseTests
 
         var audit = Assert.Single(eventRepository.AuditLogs);
         Assert.Equal("Updated event 'Dinner at Ginza'.", audit.Summary);
+    }
+
+    private static List<ValidationResult> Validate(object instance)
+    {
+        var validationContext = new ValidationContext(instance);
+        var validationResults = new List<ValidationResult>();
+        Validator.TryValidateObject(instance, validationContext, validationResults, validateAllProperties: true);
+        return validationResults;
     }
 }

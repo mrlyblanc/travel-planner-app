@@ -28,6 +28,9 @@ export default defineConfig(({ command, mode }) => {
   return {
     plugins: [react(), staticWebAppConfigPlugin(staticWebAppConfig)],
     server: {
+      fs: {
+        allow: [path.resolve(process.cwd(), '..')],
+      },
       headers: securityHeaders,
     },
     preview: {

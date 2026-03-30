@@ -117,7 +117,7 @@ public sealed class TravelPlannerDbContext : DbContext, IUnitOfWork
             entity.Property(eventEntity => eventEntity.LocationAddress).HasMaxLength(400);
             entity.Property(eventEntity => eventEntity.LocationLat).HasPrecision(9, 6);
             entity.Property(eventEntity => eventEntity.LocationLng).HasPrecision(9, 6);
-            entity.Property(eventEntity => eventEntity.Cost).HasPrecision(18, 2);
+            entity.Property(eventEntity => eventEntity.Cost).HasPrecision(18, 3);
             entity.Property(eventEntity => eventEntity.CurrencyCode).HasMaxLength(3);
             entity.HasOne(eventEntity => eventEntity.Itinerary)
                 .WithMany(itinerary => itinerary.Events)
