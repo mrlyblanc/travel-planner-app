@@ -13,7 +13,7 @@ const LOCAL_API_BASE_URLS = [
 ];
 const DEFAULT_LOGIN_EMAIL = import.meta.env.VITE_DEV_LOGIN_EMAIL?.trim() ?? '';
 const DEFAULT_LOGIN_PASSWORD = import.meta.env.VITE_DEV_LOGIN_PASSWORD ?? '';
-const AUTH_STORAGE_KEY = 'travel-planner-auth-session';
+const LEGACY_AUTH_STORAGE_KEY = 'travel-planner-auth-session';
 
 const normalizeBaseUrl = (value: string) => value.replace(/\/$/, '');
 const isLocalUrl = (value: string) => {
@@ -78,7 +78,6 @@ interface RefreshTokenRequest {
 
 interface AuthResponseDto {
   accessToken: string;
-  refreshToken: string;
   tokenType: string;
   expiresAtUtc: string;
   refreshTokenExpiresAtUtc: string;
@@ -175,11 +174,14 @@ interface EventAuditLogResponseDto {
 
 export interface AuthSession {
   accessToken: string;
-  refreshToken: string;
   tokenType: string;
   expiresAt: string;
   refreshTokenExpiresAt: string;
   user: User;
+}
+
+interface LegacyAuthSession extends AuthSession {
+  refreshToken?: string | null;
 }
 
 export interface ItineraryInputDto {
@@ -245,44 +247,55 @@ const normalizeUtcTimestamp = (value: string | null | undefined) => {
 
 export const toIfMatchHeader = (version: string) => `"${version}"`;
 
+let inMemoryAuthSession: AuthSession | null = null;
+
+const normalizeAuthSession = (session: AuthSession): AuthSession => ({
+  ...session,
+  expiresAt: normalizeUtcTimestamp(session.expiresAt),
+  refreshTokenExpiresAt: normalizeUtcTimestamp(session.refreshTokenExpiresAt),
+  user: {
+    ...session.user,
+    createdAt: normalizeUtcTimestamp(session.user.createdAt),
+  },
+});
+
 const readAuthSession = (): AuthSession | null => {
+  return inMemoryAuthSession ? normalizeAuthSession(inMemoryAuthSession) : null;
+};
+
+const clearLegacyAuthSession = () => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.localStorage.removeItem(LEGACY_AUTH_STORAGE_KEY);
+};
+
+const readLegacyAuthSession = (): LegacyAuthSession | null => {
   if (typeof window === 'undefined') {
     return null;
   }
 
-  const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
+  const raw = window.localStorage.getItem(LEGACY_AUTH_STORAGE_KEY);
   if (!raw) {
     return null;
   }
 
   try {
-    const session = JSON.parse(raw) as AuthSession;
+    const session = JSON.parse(raw) as LegacyAuthSession;
     return {
-      ...session,
-      expiresAt: normalizeUtcTimestamp(session.expiresAt),
-      refreshTokenExpiresAt: normalizeUtcTimestamp(session.refreshTokenExpiresAt),
-      user: {
-        ...session.user,
-        createdAt: normalizeUtcTimestamp(session.user.createdAt),
-      },
+      ...normalizeAuthSession(session),
+      refreshToken: session.refreshToken?.trim() || null,
     };
   } catch {
-    window.localStorage.removeItem(AUTH_STORAGE_KEY);
+    clearLegacyAuthSession();
     return null;
   }
 };
 
 const writeAuthSession = (session: AuthSession | null) => {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  if (!session) {
-    window.localStorage.removeItem(AUTH_STORAGE_KEY);
-    return;
-  }
-
-  window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
+  inMemoryAuthSession = session ? normalizeAuthSession(session) : null;
+  clearLegacyAuthSession();
 };
 
 async function apiRequest<T>(
@@ -300,6 +313,7 @@ async function apiRequest<T>(
     try {
       response = await fetch(apiUrl(baseUrl, path), {
         method: options.method ?? 'GET',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           'X-Api-Version': API_VERSION,
@@ -475,10 +489,12 @@ const toEventPayload = (input: EventInputDto) => ({
   cost: input.cost,
 });
 
-export const authSessionStorage = {
+export const authSessionCache = {
   load: readAuthSession,
   save: writeAuthSession,
   clear: () => writeAuthSession(null),
+  loadLegacy: readLegacyAuthSession,
+  clearLegacy: clearLegacyAuthSession,
 };
 
 export const backendConfig = {
@@ -501,14 +517,13 @@ export const travelApi = {
 
     const session: AuthSession = {
       accessToken: response.data.accessToken,
-      refreshToken: response.data.refreshToken,
       tokenType: response.data.tokenType,
       expiresAt: normalizeUtcTimestamp(response.data.expiresAtUtc),
       refreshTokenExpiresAt: normalizeUtcTimestamp(response.data.refreshTokenExpiresAtUtc),
       user: mapUserResponse(response.data.user),
     };
 
-    authSessionStorage.save(session);
+    authSessionCache.save(session);
     return session;
   },
 
@@ -521,31 +536,29 @@ export const travelApi = {
     return mapUserResponse(response.data);
   },
 
-  async refresh(refreshToken: string) {
+  async refresh(refreshToken?: string) {
     const response = await apiRequest<AuthResponseDto>('/auth/refresh', {
       method: 'POST',
-      body: { refreshToken } satisfies RefreshTokenRequest,
+      body: refreshToken ? ({ refreshToken } satisfies RefreshTokenRequest) : undefined,
     });
 
     const session: AuthSession = {
       accessToken: response.data.accessToken,
-      refreshToken: response.data.refreshToken,
       tokenType: response.data.tokenType,
       expiresAt: normalizeUtcTimestamp(response.data.expiresAtUtc),
       refreshTokenExpiresAt: normalizeUtcTimestamp(response.data.refreshTokenExpiresAtUtc),
       user: mapUserResponse(response.data.user),
     };
 
-    authSessionStorage.save(session);
+    authSessionCache.save(session);
     return session;
   },
 
-  async logout(refreshToken: string) {
+  async logout() {
     await apiRequest<void>('/auth/logout', {
       method: 'POST',
-      body: { refreshToken } satisfies RefreshTokenRequest,
     });
-    authSessionStorage.clear();
+    authSessionCache.clear();
   },
 
   async changePassword(token: string, request: ChangePasswordRequest) {

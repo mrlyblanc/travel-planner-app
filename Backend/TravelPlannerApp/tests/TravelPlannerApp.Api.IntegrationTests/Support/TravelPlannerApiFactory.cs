@@ -71,7 +71,7 @@ public sealed class TravelPlannerApiFactory : WebApplicationFactory<Program>
             Password = SeedPassword
         });
         response.EnsureSuccessStatusCode();
-        var payload = await response.Content.ReadFromJsonAsync<AuthResponse>();
+        var payload = await response.Content.ReadFromJsonAsync<AuthSessionResponse>();
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", payload!.AccessToken);
         return client;
     }

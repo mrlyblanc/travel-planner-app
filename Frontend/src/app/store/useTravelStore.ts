@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { dayjs } from '../../lib/date';
-import { ApiError, authSessionStorage, travelApi, type AuthSession, type EventInputDto, type ItineraryInputDto } from '../../lib/api';
+import { ApiError, authSessionCache, travelApi, type AuthSession, type EventInputDto, type ItineraryInputDto } from '../../lib/api';
 import { itineraryRealtimeClient } from '../../lib/realtime';
 import type { EventAuditLog, ItineraryEvent } from '../../types/event';
 import type { Itinerary, ItineraryMember } from '../../types/itinerary';
@@ -31,7 +31,6 @@ interface TravelState {
   eventHistory: Record<string, EventAuditLog[]>;
   currentUserId: string;
   accessToken: string | null;
-  refreshToken: string | null;
   isBootstrapping: boolean;
   isReady: boolean;
   error: string | null;
@@ -63,7 +62,6 @@ const emptyDataState = {
   eventHistory: {} as Record<string, EventAuditLog[]>,
   currentUserId: '',
   accessToken: null as string | null,
-  refreshToken: null as string | null,
 };
 
 const mergeUsers = (...collections: User[][]) => {
@@ -98,40 +96,64 @@ const upsertEvent = (events: ItineraryEvent[], nextEvent: ItineraryEvent) => {
   return [...existing, nextEvent];
 };
 
-const restoreSession = async (existingSession?: AuthSession | null): Promise<AuthSession | null> => {
-  let session = existingSession ?? authSessionStorage.load();
+const isUnauthorizedApiError = (error: unknown) => error instanceof ApiError && error.status === 401;
 
-  if (!session) {
-    return null;
+const restoreSession = async (existingSession?: AuthSession | null): Promise<AuthSession | null> => {
+  let session = existingSession ?? authSessionCache.load();
+  const legacySession = !session ? authSessionCache.loadLegacy() : null;
+
+  if (!session && legacySession?.refreshToken) {
+    try {
+      session = await travelApi.refresh(legacySession.refreshToken);
+      authSessionCache.clearLegacy();
+      return session;
+    } catch (error) {
+      authSessionCache.clearLegacy();
+      if (!isUnauthorizedApiError(error)) {
+        throw error;
+      }
+    }
   }
 
-  const refreshThreshold = dayjs().add(5, 'minute');
+  if (!session) {
+    try {
+      return await travelApi.refresh();
+    } catch (error) {
+      if (isUnauthorizedApiError(error)) {
+        return null;
+      }
+
+      throw error;
+    }
+  }
+
+  const refreshSessionOrFail = async () => {
+    try {
+      return await travelApi.refresh();
+    } catch (error) {
+      authSessionCache.clear();
+      if (isUnauthorizedApiError(error)) {
+        return null;
+      }
+
+      throw error;
+    }
+  };
+
+  if (dayjs(session.expiresAt).isBefore(dayjs().add(5, 'minute'))) {
+    return refreshSessionOrFail();
+  }
 
   try {
-    if (dayjs(session.expiresAt).isBefore(refreshThreshold) && session.refreshToken) {
-      session = await travelApi.refresh(session.refreshToken);
-      return session;
-    }
-
     const currentUser = await travelApi.getCurrentUser(session.accessToken);
     session = {
       ...session,
       user: currentUser,
     };
-    authSessionStorage.save(session);
+    authSessionCache.save(session);
     return session;
   } catch {
-    if (session.refreshToken) {
-      try {
-        return await travelApi.refresh(session.refreshToken);
-      } catch {
-        authSessionStorage.clear();
-        return null;
-      }
-    }
-
-    authSessionStorage.clear();
-    return null;
+    return refreshSessionOrFail();
   }
 };
 
@@ -191,7 +213,6 @@ const buildAuthenticatedState = (session: AuthSession, bundle: Awaited<ReturnTyp
   eventHistory: {},
   currentUserId: bundle.currentUser.id,
   accessToken: session.accessToken,
-  refreshToken: session.refreshToken,
   isBootstrapping: false,
   isReady: true,
   error: null,
@@ -214,19 +235,8 @@ export const useTravelStore = create<TravelState>((set, get) => ({
 
     set({ isBootstrapping: true, error: null });
 
-    const storedSession = authSessionStorage.load();
-    if (!storedSession) {
-      set({
-        ...emptyDataState,
-        isBootstrapping: false,
-        isReady: true,
-        error: null,
-      });
-      return;
-    }
-
     try {
-      const session = await restoreSession(storedSession);
+      const session = await restoreSession();
       if (!session) {
         set({
           ...emptyDataState,
@@ -309,7 +319,6 @@ export const useTravelStore = create<TravelState>((set, get) => ({
 
       set({
         accessToken: session.accessToken,
-        refreshToken: session.refreshToken,
         error: null,
       });
     } catch (error) {
@@ -320,16 +329,12 @@ export const useTravelStore = create<TravelState>((set, get) => ({
   },
 
   logout: async () => {
-    const refreshToken = get().refreshToken ?? authSessionStorage.load()?.refreshToken ?? null;
-
     try {
-      if (refreshToken) {
-        await travelApi.logout(refreshToken);
-      }
+      await travelApi.logout();
     } catch {
     }
 
-    authSessionStorage.clear();
+    authSessionCache.clear();
 
     await itineraryRealtimeClient.disconnect();
 
@@ -352,7 +357,6 @@ export const useTravelStore = create<TravelState>((set, get) => ({
       events: bundle.events,
       currentUserId: bundle.currentUser.id,
       accessToken: session.accessToken,
-      refreshToken: session.refreshToken,
       error: null,
     }));
   },
@@ -376,7 +380,6 @@ export const useTravelStore = create<TravelState>((set, get) => ({
       },
       events: [...state.events.filter((event) => event.itineraryId !== itineraryId), ...events],
       accessToken: session.accessToken,
-      refreshToken: session.refreshToken,
       error: null,
     }));
   },
@@ -393,7 +396,6 @@ export const useTravelStore = create<TravelState>((set, get) => ({
     set((state) => ({
       users: mergeUsers(state.users, users),
       accessToken: session.accessToken,
-      refreshToken: session.refreshToken,
     }));
 
     return users;
@@ -409,7 +411,6 @@ export const useTravelStore = create<TravelState>((set, get) => ({
         [eventId]: auditHistory,
       },
       accessToken: session.accessToken,
-      refreshToken: session.refreshToken,
     }));
   },
 
@@ -440,7 +441,6 @@ export const useTravelStore = create<TravelState>((set, get) => ({
         [itinerary.id]: members,
       },
       accessToken: session.accessToken,
-      refreshToken: session.refreshToken,
       currentUserId: currentUser.id,
       error: null,
     }));
@@ -462,7 +462,6 @@ export const useTravelStore = create<TravelState>((set, get) => ({
     set((currentState) => ({
       itineraries: upsertItinerary(currentState.itineraries, travelApi.mapItinerary(updatedDto, members)),
       accessToken: session.accessToken,
-      refreshToken: session.refreshToken,
       error: null,
     }));
   },
@@ -493,7 +492,6 @@ export const useTravelStore = create<TravelState>((set, get) => ({
         [itineraryId]: replacement.members,
       },
       accessToken: session.accessToken,
-      refreshToken: session.refreshToken,
       error: null,
     }));
   },
@@ -524,7 +522,6 @@ export const useTravelStore = create<TravelState>((set, get) => ({
         [itineraryId]: replacement.members,
       },
       accessToken: session.accessToken,
-      refreshToken: session.refreshToken,
       error: null,
     }));
   },
@@ -536,7 +533,6 @@ export const useTravelStore = create<TravelState>((set, get) => ({
     set((state) => ({
       events: upsertEvent(state.events, event),
       accessToken: session.accessToken,
-      refreshToken: session.refreshToken,
       error: null,
     }));
 
@@ -560,7 +556,6 @@ export const useTravelStore = create<TravelState>((set, get) => ({
         [eventId]: [],
       },
       accessToken: session.accessToken,
-      refreshToken: session.refreshToken,
       error: null,
     }));
   },
@@ -583,7 +578,6 @@ export const useTravelStore = create<TravelState>((set, get) => ({
         events: currentState.events.filter((event) => event.id !== eventId),
         eventHistory: nextHistory,
         accessToken: session.accessToken,
-        refreshToken: session.refreshToken,
         error: null,
       };
     });

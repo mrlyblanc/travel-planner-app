@@ -35,7 +35,7 @@ public sealed class MinimalApiEndpointsTests
     }
 
     [Fact]
-    public async Task Login_WithSeededCredentials_ReturnsJwtAndUser()
+    public async Task Login_WithSeededCredentials_ReturnsJwtUserAndHttpOnlyRefreshCookie()
     {
         using var factory = new TravelPlannerApiFactory();
         using var client = factory.CreateApiClient();
@@ -47,12 +47,15 @@ public sealed class MinimalApiEndpointsTests
         }, JsonOptions);
 
         response.EnsureSuccessStatusCode();
-        var payload = await response.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions);
+        var payload = await response.Content.ReadFromJsonAsync<AuthSessionResponse>(JsonOptions);
         Assert.NotNull(payload);
         Assert.False(string.IsNullOrWhiteSpace(payload!.AccessToken));
-        Assert.False(string.IsNullOrWhiteSpace(payload.RefreshToken));
         Assert.Equal("Bearer", payload.TokenType);
         Assert.Equal("user-ava", payload.User.Id);
+        Assert.Contains(
+            response.Headers.TryGetValues("Set-Cookie", out var setCookieValues) ? setCookieValues : [],
+            value => value.Contains("travelplanner.refresh=", StringComparison.Ordinal)
+                && value.Contains("HttpOnly", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -67,19 +70,19 @@ public sealed class MinimalApiEndpointsTests
             Password = TravelPlannerApiFactory.SeedPassword
         }, JsonOptions);
         loginResponse.EnsureSuccessStatusCode();
-        var loginPayload = await loginResponse.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions);
+        var loginPayload = await loginResponse.Content.ReadFromJsonAsync<AuthSessionResponse>(JsonOptions);
         Assert.NotNull(loginPayload);
 
-        var refreshResponse = await client.PostAsJsonAsync("/api/auth/refresh", new RefreshTokenRequest
-        {
-            RefreshToken = loginPayload!.RefreshToken
-        }, JsonOptions);
+        var firstSetCookie = loginResponse.Headers.GetValues("Set-Cookie").Single();
+
+        var refreshResponse = await client.PostAsync("/api/auth/refresh", content: null);
 
         refreshResponse.EnsureSuccessStatusCode();
-        var refreshPayload = await refreshResponse.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions);
+        var refreshPayload = await refreshResponse.Content.ReadFromJsonAsync<AuthSessionResponse>(JsonOptions);
         Assert.NotNull(refreshPayload);
         Assert.NotEqual(loginPayload.AccessToken, refreshPayload!.AccessToken);
-        Assert.NotEqual(loginPayload.RefreshToken, refreshPayload.RefreshToken);
+        var secondSetCookie = refreshResponse.Headers.GetValues("Set-Cookie").Single();
+        Assert.NotEqual(firstSetCookie, secondSetCookie);
     }
 
     [Fact]
@@ -94,21 +97,48 @@ public sealed class MinimalApiEndpointsTests
             Password = TravelPlannerApiFactory.SeedPassword
         }, JsonOptions);
         loginResponse.EnsureSuccessStatusCode();
-        var loginPayload = await loginResponse.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions);
-        Assert.NotNull(loginPayload);
+        Assert.NotNull(await loginResponse.Content.ReadFromJsonAsync<AuthSessionResponse>(JsonOptions));
 
-        var firstRefreshResponse = await client.PostAsJsonAsync("/api/auth/refresh", new RefreshTokenRequest
-        {
-            RefreshToken = loginPayload!.RefreshToken
-        }, JsonOptions);
+        var issuedCookie = loginResponse.Headers.GetValues("Set-Cookie").Single();
+
+        var firstRefreshResponse = await client.PostAsync("/api/auth/refresh", content: null);
         firstRefreshResponse.EnsureSuccessStatusCode();
 
-        var secondRefreshResponse = await client.PostAsJsonAsync("/api/auth/refresh", new RefreshTokenRequest
-        {
-            RefreshToken = loginPayload.RefreshToken
-        }, JsonOptions);
+        using var replayClient = factory.CreateApiClient();
+        replayClient.DefaultRequestHeaders.Add("Cookie", issuedCookie.Split(';', 2)[0]);
+
+        var secondRefreshResponse = await replayClient.PostAsync("/api/auth/refresh", content: null);
 
         Assert.Equal(HttpStatusCode.Unauthorized, secondRefreshResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task Refresh_WithLegacyRequestBodyStillReturnsRotatedTokens()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = factory.CreateApiClient();
+
+        var loginResponse = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
+        {
+            Email = AvaEmail,
+            Password = TravelPlannerApiFactory.SeedPassword
+        }, JsonOptions);
+        loginResponse.EnsureSuccessStatusCode();
+        var issuedCookie = loginResponse.Headers.GetValues("Set-Cookie").Single();
+        var refreshToken = issuedCookie
+            .Split(';', 2)[0]
+            .Split('=', 2)[1];
+
+        using var legacyClient = factory.CreateApiClient();
+        var response = await legacyClient.PostAsJsonAsync("/api/auth/refresh", new RefreshTokenRequest
+        {
+            RefreshToken = refreshToken
+        }, JsonOptions);
+
+        response.EnsureSuccessStatusCode();
+        var payload = await response.Content.ReadFromJsonAsync<AuthSessionResponse>(JsonOptions);
+        Assert.NotNull(payload);
+        Assert.False(string.IsNullOrWhiteSpace(payload!.AccessToken));
     }
 
     [Fact]
@@ -123,20 +153,13 @@ public sealed class MinimalApiEndpointsTests
             Password = TravelPlannerApiFactory.SeedPassword
         }, JsonOptions);
         loginResponse.EnsureSuccessStatusCode();
-        var loginPayload = await loginResponse.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions);
-        Assert.NotNull(loginPayload);
+        Assert.NotNull(await loginResponse.Content.ReadFromJsonAsync<AuthSessionResponse>(JsonOptions));
 
-        var logoutResponse = await client.PostAsJsonAsync("/api/auth/logout", new RefreshTokenRequest
-        {
-            RefreshToken = loginPayload!.RefreshToken
-        }, JsonOptions);
+        var logoutResponse = await client.PostAsync("/api/auth/logout", content: null);
 
         Assert.Equal(HttpStatusCode.NoContent, logoutResponse.StatusCode);
 
-        var refreshResponse = await client.PostAsJsonAsync("/api/auth/refresh", new RefreshTokenRequest
-        {
-            RefreshToken = loginPayload.RefreshToken
-        }, JsonOptions);
+        var refreshResponse = await client.PostAsync("/api/auth/refresh", content: null);
 
         Assert.Equal(HttpStatusCode.Unauthorized, refreshResponse.StatusCode);
     }
@@ -153,7 +176,7 @@ public sealed class MinimalApiEndpointsTests
             Password = TravelPlannerApiFactory.SeedPassword
         }, JsonOptions);
         loginResponse.EnsureSuccessStatusCode();
-        var loginPayload = await loginResponse.Content.ReadFromJsonAsync<AuthResponse>(JsonOptions);
+        var loginPayload = await loginResponse.Content.ReadFromJsonAsync<AuthSessionResponse>(JsonOptions);
         Assert.NotNull(loginPayload);
 
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", loginPayload!.AccessToken);
@@ -172,10 +195,7 @@ public sealed class MinimalApiEndpointsTests
 
         client.DefaultRequestHeaders.Authorization = null;
 
-        var oldRefreshResponse = await client.PostAsJsonAsync("/api/auth/refresh", new RefreshTokenRequest
-        {
-            RefreshToken = loginPayload.RefreshToken
-        }, JsonOptions);
+        var oldRefreshResponse = await client.PostAsync("/api/auth/refresh", content: null);
         Assert.Equal(HttpStatusCode.Unauthorized, oldRefreshResponse.StatusCode);
 
         var oldLoginResponse = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
