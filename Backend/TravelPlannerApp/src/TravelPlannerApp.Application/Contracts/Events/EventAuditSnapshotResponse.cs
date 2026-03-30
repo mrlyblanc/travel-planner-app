@@ -17,5 +17,6 @@ public sealed record EventAuditSnapshotResponse(
     decimal? LocationLat,
     decimal? LocationLng,
     decimal? Cost,
+    string? CurrencyCode,
     string UpdatedById,
     DateTime UpdatedAtUtc);

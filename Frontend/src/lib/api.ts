@@ -1,3 +1,4 @@
+import { normalizeCurrencyCode } from './currency';
 import { getDefaultEventColor, normalizeEventColor } from './events';
 import type { EventAuditLog, EventAuditSnapshot, EventCategory, ItineraryEvent } from '../types/event';
 import type { Itinerary, ItineraryMember } from '../types/itinerary';
@@ -136,6 +137,7 @@ interface EventResponseDto {
   locationLat?: number | null;
   locationLng?: number | null;
   cost?: number | null;
+  currencyCode?: string | null;
   createdById: string;
   updatedById: string;
   createdAtUtc: string;
@@ -157,6 +159,7 @@ interface EventAuditSnapshotResponseDto {
   locationLat?: number | null;
   locationLng?: number | null;
   cost?: number | null;
+  currencyCode?: string | null;
   updatedById: string;
   updatedAtUtc: string;
 }
@@ -205,6 +208,7 @@ export interface EventInputDto {
   locationLat: number | null;
   locationLng: number | null;
   cost: number;
+  currencyCode: string | null;
 }
 
 export interface ItineraryRealtimeNotification {
@@ -430,6 +434,7 @@ const mapEventResponse = (event: EventResponseDto): ItineraryEvent => ({
   locationLat: event.locationLat ?? null,
   locationLng: event.locationLng ?? null,
   cost: event.cost ?? 0,
+  currencyCode: normalizeCurrencyCode(event.currencyCode),
   createdBy: event.createdById,
   updatedBy: event.updatedById,
   createdAt: normalizeUtcTimestamp(event.createdAtUtc),
@@ -451,6 +456,7 @@ const mapAuditSnapshot = (snapshot: EventAuditSnapshotResponseDto): EventAuditSn
   locationLat: snapshot.locationLat ?? null,
   locationLng: snapshot.locationLng ?? null,
   cost: snapshot.cost ?? null,
+  currencyCode: normalizeCurrencyCode(snapshot.currencyCode),
   updatedBy: snapshot.updatedById,
   updatedAt: normalizeUtcTimestamp(snapshot.updatedAtUtc),
 });
@@ -487,6 +493,7 @@ const toEventPayload = (input: EventInputDto) => ({
   locationLat: input.locationLat,
   locationLng: input.locationLng,
   cost: input.cost,
+  currencyCode: normalizeCurrencyCode(input.currencyCode),
 });
 
 export const authSessionCache = {

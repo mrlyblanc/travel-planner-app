@@ -432,13 +432,15 @@ public sealed class MinimalApiEndpointsTests
             StartDateTime = new DateTime(2026, 4, 16, 19, 0, 0),
             EndDateTime = new DateTime(2026, 4, 16, 21, 0, 0),
             Timezone = "Asia/Tokyo",
-            Cost = 40m
+            Cost = 40m,
+            CurrencyCode = "JPY"
         }, JsonOptions);
 
         createResponse.EnsureSuccessStatusCode();
         Assert.True(createResponse.Headers.ETag is not null);
         var createdEvent = await createResponse.Content.ReadFromJsonAsync<EventResponse>(JsonOptions);
         Assert.NotNull(createdEvent);
+        Assert.Equal("JPY", createdEvent!.CurrencyCode);
 
         var history = await client.GetFromJsonAsync<List<EventAuditLogResponse>>($"/api/events/{createdEvent!.Id}/history", JsonOptions);
 
@@ -468,7 +470,8 @@ public sealed class MinimalApiEndpointsTests
             LocationAddress = "Dogenzaka, Shibuya City, Tokyo",
             LocationLat = 35.6595m,
             LocationLng = 139.7005m,
-            Cost = 75m
+            Cost = 75m,
+            CurrencyCode = "JPY"
         }, staleEtag));
 
         updateResponse.EnsureSuccessStatusCode();
@@ -476,6 +479,7 @@ public sealed class MinimalApiEndpointsTests
         var updated = await updateResponse.Content.ReadFromJsonAsync<EventResponse>(JsonOptions);
         Assert.NotNull(updated);
         Assert.Equal("Updated description", updated!.Description);
+        Assert.Equal("JPY", updated.CurrencyCode);
         Assert.NotEqual(TrimQuotes(staleEtag), updated.Version);
 
         var history = await client.GetFromJsonAsync<List<EventAuditLogResponse>>("/api/events/evt-tokyo-1/history", JsonOptions);

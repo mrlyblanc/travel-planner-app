@@ -88,10 +88,12 @@ public sealed class EventServiceTests
             StartDateTime = new DateTime(2026, 4, 15, 18, 0, 0),
             EndDateTime = new DateTime(2026, 4, 15, 20, 0, 0),
             Timezone = "Asia/Tokyo",
-            Cost = 20m
+            Cost = 20m,
+            CurrencyCode = "JPY"
         });
 
         Assert.Equal("Shibuya Walk", response.Title);
+        Assert.Equal("JPY", response.CurrencyCode);
         Assert.False(string.IsNullOrWhiteSpace(response.Version));
         Assert.Single(eventRepository.Events);
         Assert.Single(eventRepository.AuditLogs);
@@ -126,7 +128,8 @@ public sealed class EventServiceTests
             LocationAddress = existingEvent.LocationAddress,
             LocationLat = existingEvent.LocationLat,
             LocationLng = existingEvent.LocationLng,
-            Cost = existingEvent.Cost
+            Cost = existingEvent.Cost,
+            CurrencyCode = existingEvent.CurrencyCode
         });
 
         var audit = Assert.Single(eventRepository.AuditLogs);
@@ -241,7 +244,8 @@ public sealed class EventServiceTests
             LocationAddress = existingEvent.LocationAddress,
             LocationLat = existingEvent.LocationLat,
             LocationLng = existingEvent.LocationLng,
-            Cost = existingEvent.Cost
+            Cost = existingEvent.Cost,
+            CurrencyCode = existingEvent.CurrencyCode
         }));
     }
 

@@ -65,6 +65,7 @@ public static class ResponseMappings
             eventEntity.LocationLat,
             eventEntity.LocationLng,
             eventEntity.Cost,
+            eventEntity.CurrencyCode,
             eventEntity.CreatedById,
             eventEntity.UpdatedById,
             eventEntity.CreatedAtUtc,
@@ -88,6 +89,7 @@ public static class ResponseMappings
             eventEntity.LocationLat,
             eventEntity.LocationLng,
             eventEntity.Cost,
+            eventEntity.CurrencyCode,
             eventEntity.UpdatedById,
             eventEntity.UpdatedAtUtc);
     }

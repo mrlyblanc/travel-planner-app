@@ -83,6 +83,7 @@ public sealed class EventService : IEventService
             LocationLat = request.LocationLat,
             LocationLng = request.LocationLng,
             Cost = request.Cost,
+            CurrencyCode = NormalizeCurrencyCode(request.CurrencyCode),
             CreatedById = currentUser.Id,
             UpdatedById = currentUser.Id,
             CreatedAtUtc = now,
@@ -126,6 +127,7 @@ public sealed class EventService : IEventService
         eventEntity.LocationLat = request.LocationLat;
         eventEntity.LocationLng = request.LocationLng;
         eventEntity.Cost = request.Cost;
+        eventEntity.CurrencyCode = NormalizeCurrencyCode(request.CurrencyCode);
         eventEntity.ConcurrencyToken = ConcurrencyTokenHelper.NewToken();
         eventEntity.UpdatedById = currentUser.Id;
         eventEntity.UpdatedAtUtc = DateTime.UtcNow;
@@ -272,7 +274,8 @@ public sealed class EventService : IEventService
             || !string.Equals(current.LocationAddress, request.LocationAddress?.Trim(), StringComparison.Ordinal)
             || current.LocationLat != request.LocationLat
             || current.LocationLng != request.LocationLng
-            || current.Cost != request.Cost;
+            || current.Cost != request.Cost
+            || !string.Equals(current.CurrencyCode, NormalizeCurrencyCode(request.CurrencyCode), StringComparison.Ordinal);
 
         if (scheduleChanged && !detailsChanged)
         {
@@ -280,5 +283,11 @@ public sealed class EventService : IEventService
         }
 
         return $"Updated event '{normalizedTitle}'.";
+    }
+
+    private static string? NormalizeCurrencyCode(string? currencyCode)
+    {
+        var normalized = currencyCode?.Trim().ToUpperInvariant();
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
     }
 }

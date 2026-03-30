@@ -28,6 +28,7 @@ import type { Dayjs } from 'dayjs';
 import { z } from 'zod';
 import type { EventInput } from '../../app/store/useTravelStore';
 import { isGeoapifyConfigured, searchLocationSuggestions } from '../../features/events/placeAutocomplete';
+import { getCurrencyOptionLabel, normalizeCurrencyCode, supportedCurrencies } from '../../lib/currency';
 import { dayjs, formatDateTime } from '../../lib/date';
 import {
   eventCategoryOptions,
@@ -79,6 +80,7 @@ const eventSchema = z
     locationAddress: z.string(),
     locationLat: z.number().nullable(),
     locationLng: z.number().nullable(),
+    currencyCode: z.string(),
     cost: z.preprocess(
       (value) => {
         if (value === '' || value === null || value === undefined) {
@@ -109,7 +111,16 @@ const eventSchema = z
       message: 'End time must be after the start time',
       path: ['endTime'],
     },
-  );
+  )
+  .superRefine((values, context) => {
+    if (values.cost > 0 && !normalizeCurrencyCode(values.currencyCode)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Currency is required when a cost is set',
+        path: ['currencyCode'],
+      });
+    }
+  });
 
 type ParsedEventFormValues = z.output<typeof eventSchema>;
 
@@ -127,6 +138,7 @@ interface EventFormValues {
   locationAddress: string;
   locationLat: number | null;
   locationLng: number | null;
+  currencyCode: string;
   cost: string;
 }
 
@@ -202,6 +214,7 @@ const buildDefaultValues = (
       locationAddress: event.locationAddress,
       locationLat: event.locationLat,
       locationLng: event.locationLng,
+      currencyCode: event.currencyCode ?? '',
       cost: roundCurrency(event.cost).toFixed(2),
     };
   }
@@ -222,6 +235,7 @@ const buildDefaultValues = (
       locationAddress: '',
       locationLat: null,
       locationLng: null,
+      currencyCode: '',
       cost: '',
     };
   }
@@ -240,6 +254,7 @@ const buildDefaultValues = (
     locationAddress: '',
     locationLat: null,
     locationLng: null,
+    currencyCode: '',
     cost: '',
   };
 };
@@ -424,6 +439,7 @@ export const EventDrawer = ({
                   locationAddress: parsedValues.locationAddress,
                   locationLat: parsedValues.locationLat,
                   locationLng: parsedValues.locationLng,
+                  currencyCode: normalizeCurrencyCode(parsedValues.currencyCode),
                   cost: roundCurrency(parsedValues.cost),
                 },
                 event?.id,
@@ -791,38 +807,69 @@ export const EventDrawer = ({
             {...register('locationAddress')}
           />
 
-          <Controller
-            control={control}
-            name="cost"
-            render={({ field }) => (
-              <TextField
-                disabled={!canManage}
-                error={Boolean(errors.cost)}
-                helperText={errors.cost?.message ?? 'Optional budget estimate for this stop, booking, or activity.'}
-                inputProps={{ min: 0, step: '0.01' }}
-                label="Cost (USD)"
-                onChange={field.onChange}
-                onBlur={(blurEvent) => {
-                  field.onBlur();
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
+            <Controller
+              control={control}
+              name="currencyCode"
+              render={({ field }) => (
+                <TextField
+                  disabled={!canManage}
+                  error={Boolean(errors.currencyCode)}
+                  helperText={errors.currencyCode?.message ?? 'Choose the currency used for this booking, meal, or activity.'}
+                  label="Currency"
+                  onChange={field.onChange}
+                  select
+                  sx={{ flex: 0.95 }}
+                  value={field.value}
+                >
+                  <MenuItem value="">
+                    <Typography color="text.secondary" variant="body2">
+                      Select currency
+                    </Typography>
+                  </MenuItem>
+                  {supportedCurrencies.map((currency) => (
+                    <MenuItem key={currency.code} value={currency.code}>
+                      {getCurrencyOptionLabel(currency.code)}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              )}
+            />
 
-                  const rawValue = blurEvent.target.value.trim();
-                  if (!rawValue) {
-                    return;
-                  }
+            <Controller
+              control={control}
+              name="cost"
+              render={({ field }) => (
+                <TextField
+                  disabled={!canManage}
+                  error={Boolean(errors.cost)}
+                  helperText={errors.cost?.message ?? 'Optional budget estimate for this stop, booking, or activity.'}
+                  inputProps={{ min: 0, step: '0.01' }}
+                  label="Cost"
+                  onChange={field.onChange}
+                  onBlur={(blurEvent) => {
+                    field.onBlur();
 
-                  const parsedValue = Number(rawValue);
-                  if (Number.isNaN(parsedValue)) {
-                    return;
-                  }
+                    const rawValue = blurEvent.target.value.trim();
+                    if (!rawValue) {
+                      return;
+                    }
 
-                  field.onChange(roundCurrency(parsedValue).toFixed(2));
-                }}
-                placeholder="0.00"
-                type="number"
-                value={field.value}
-              />
-            )}
-          />
+                    const parsedValue = Number(rawValue);
+                    if (Number.isNaN(parsedValue)) {
+                      return;
+                    }
+
+                    field.onChange(roundCurrency(parsedValue).toFixed(2));
+                  }}
+                  placeholder="0.00"
+                  sx={{ flex: 1.05 }}
+                  type="number"
+                  value={field.value}
+                />
+              )}
+            />
+          </Stack>
 
           {event ? (
             <>

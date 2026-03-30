@@ -18,6 +18,7 @@ public sealed record EventResponse(
     decimal? LocationLat,
     decimal? LocationLng,
     decimal? Cost,
+    string? CurrencyCode,
     string CreatedById,
     string UpdatedById,
     DateTime CreatedAtUtc,

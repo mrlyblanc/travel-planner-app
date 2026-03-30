@@ -29,9 +29,9 @@ import { EventListPanel } from '../components/event/EventListPanel';
 import { ItineraryFormDialog } from '../components/itinerary/ItineraryFormDialog';
 import { ShareItineraryDialog } from '../components/itinerary/ShareItineraryDialog';
 import { UserAvatarGroup } from '../components/user/UserAvatarGroup';
+import { formatCurrencySummary, getCostTotalsByCurrency } from '../lib/currency';
 import { dayjs, formatDateRange } from '../lib/date';
-import { getItineraryDuration, getTotalCost, getUpcomingEvents, getUserMap } from '../lib/travel';
-import { currencyFormatter } from '../lib/utils';
+import { getItineraryDuration, getUpcomingEvents, getUserMap } from '../lib/travel';
 
 const viewOptions: Array<{ value: CalendarView; label: string }> = [
   { value: 'timeGridDay', label: 'Day' },
@@ -80,7 +80,10 @@ export const ItineraryDetailsPage = () => {
   }
 
   const sortedEvents = getUpcomingEvents(events);
-  const totalCost = getTotalCost(events);
+  const totalCostLabel = formatCurrencySummary(getCostTotalsByCurrency(events), {
+    emptyLabel: 'No costs yet',
+    maxVisible: 2,
+  });
   const canManage = itinerary.memberIds.includes(currentUserId);
   const isOwner = itinerary.createdBy === currentUserId;
   const selectedEvent = selectedEventId ? events.find((event) => event.id === selectedEventId) ?? null : null;
@@ -214,7 +217,7 @@ export const ItineraryDetailsPage = () => {
 
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
                 <Metric label="Events" value={String(events.length)} />
-                <Metric label="Total cost" value={currencyFormatter.format(totalCost)} />
+                <Metric label="Total cost" value={totalCostLabel} />
                 <Metric label="Last updated" value={latestEventActivityLabel} />
               </Stack>
             </Stack>
@@ -306,7 +309,7 @@ export const ItineraryDetailsPage = () => {
 
         <Grid size={{ xs: 12, xl: 4 }}>
           <Stack spacing={2.5}>
-            <CostSummaryCard events={events} total={totalCost} />
+            <CostSummaryCard events={events} />
             <EventListPanel
               events={sortedEvents}
               selectedEventId={selectedEventId}

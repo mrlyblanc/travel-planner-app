@@ -19,6 +19,7 @@ public sealed class Event
     public decimal? LocationLat { get; set; }
     public decimal? LocationLng { get; set; }
     public decimal? Cost { get; set; }
+    public string? CurrencyCode { get; set; }
     public string CreatedById { get; set; } = string.Empty;
     public string UpdatedById { get; set; } = string.Empty;
     public DateTime CreatedAtUtc { get; set; }

@@ -7,10 +7,10 @@ import { useToast } from '../app/providers/ToastProvider';
 import { useTravelStore, type ItineraryInput } from '../app/store/useTravelStore';
 import { StatCard } from '../components/common/StatCard';
 import { ItineraryCard } from '../components/itinerary/ItineraryCard';
+import { formatCurrencySummary, getCostTotalsByCurrency } from '../lib/currency';
 import { ItineraryFormDialog } from '../components/itinerary/ItineraryFormDialog';
 import { formatDateRange } from '../lib/date';
-import { getTotalCost, getUserMap } from '../lib/travel';
-import { currencyFormatter } from '../lib/utils';
+import { getUserMap } from '../lib/travel';
 
 export const ItineraryListPage = () => {
   const navigate = useNavigate();
@@ -28,7 +28,14 @@ export const ItineraryListPage = () => {
   );
   const usersMap = useMemo(() => getUserMap(users), [users]);
 
-  const totalCost = useMemo(() => getTotalCost(events), [events]);
+  const totalCostLabel = useMemo(
+    () =>
+      formatCurrencySummary(getCostTotalsByCurrency(events), {
+        emptyLabel: 'No costs yet',
+        maxVisible: 3,
+      }),
+    [events],
+  );
   const nextTrip = itineraries[0];
 
   const handleCreateItinerary = async (values: ItineraryInput) => {
@@ -78,7 +85,7 @@ export const ItineraryListPage = () => {
           <StatCard helper="People available to join and collaborate on trips" icon={<Users2 size={20} />} label="Travelers" value={String(users.length)} />
         </Grid>
         <Grid size={{ xs: 12, md: 4 }}>
-          <StatCard helper="Combined planned spend across all itineraries" icon={<Coins size={20} />} label="Total planned cost" value={currencyFormatter.format(totalCost)} />
+          <StatCard helper="Combined planned spend across all itineraries" icon={<Coins size={20} />} label="Total planned cost" value={totalCostLabel} />
         </Grid>
       </Grid>
 
@@ -103,7 +110,10 @@ export const ItineraryListPage = () => {
                 collaborators={collaborators}
                 eventCount={itineraryEvents.length}
                 itinerary={itinerary}
-                totalCost={getTotalCost(itineraryEvents)}
+                totalCostLabel={formatCurrencySummary(getCostTotalsByCurrency(itineraryEvents), {
+                  emptyLabel: 'No costs yet',
+                  maxVisible: 1,
+                })}
               />
             </Grid>
           );

@@ -1,16 +1,22 @@
 import { Box, Card, CardContent, Stack, Tooltip, Typography } from '@mui/material';
 import { alpha } from '@mui/material/styles';
+import {
+  formatCurrencyAmount,
+  formatCurrencySummary,
+  getCostTotalsByCurrency,
+  getCurrencyOptionLabel,
+  normalizeCurrencyCode,
+} from '../../lib/currency';
 import { eventCategoryMeta, getDefaultEventColor } from '../../lib/events';
-import { currencyFormatter } from '../../lib/utils';
 import type { ItineraryEvent } from '../../types/event';
 
 interface CostSummaryCardProps {
-  total: number;
   events: ItineraryEvent[];
 }
 
-export const CostSummaryCard = ({ total, events }: CostSummaryCardProps) => {
-  const rows = buildCostSummaryRows(events);
+export const CostSummaryCard = ({ events }: CostSummaryCardProps) => {
+  const currencyTotals = getCostTotalsByCurrency(events);
+  const sections = buildCostSummarySections(events);
 
   return (
     <Card>
@@ -21,89 +27,137 @@ export const CostSummaryCard = ({ total, events }: CostSummaryCardProps) => {
               Trip cost summary
             </Typography>
             <Typography mt={1} variant="h5">
-              {currencyFormatter.format(total)}
+              {formatCurrencySummary(currencyTotals, {
+                emptyLabel: 'No costed events yet',
+                maxVisible: 3,
+              })}
             </Typography>
           </Box>
 
-          <Stack spacing={1.6}>
-            {rows.map((row) => {
-              const meta = eventCategoryMeta[row.category];
-              const ratio = total > 0 ? (row.amount / total) * 100 : 0;
-
-              return (
-                <Box key={row.category}>
-                  <Stack direction="row" justifyContent="space-between" mb={0.8}>
-                    <Typography variant="body2">{meta?.label ?? row.category}</Typography>
+          {sections.length === 0 ? (
+            <Typography color="text.secondary" variant="body2">
+              Add estimated costs to events to see a breakdown by currency and category.
+            </Typography>
+          ) : (
+            <Stack spacing={2.2}>
+              {sections.map((section) => (
+                <Stack key={section.currencyCode} spacing={1.4}>
+                  <Stack direction="row" justifyContent="space-between" spacing={1.5}>
+                    <Typography variant="body2">{getCurrencyOptionLabel(section.currencyCode)}</Typography>
                     <Typography color="text.secondary" variant="body2">
-                      {currencyFormatter.format(row.amount)}
+                      {formatCurrencyAmount(section.total, section.currencyCode)}
                     </Typography>
                   </Stack>
-                  <BarTrack>
-                    {row.segments.map((segment) => (
-                      <Tooltip
-                        key={segment.eventId}
-                        title={`${segment.title} • ${currencyFormatter.format(segment.amount)}`}
-                      >
-                        <BarSegment
-                          sx={{
-                            width: `${total > 0 ? (segment.amount / total) * 100 : 0}%`,
-                            bgcolor: segment.color,
-                          }}
-                        />
-                      </Tooltip>
-                    ))}
-                    <BarRemainder sx={{ width: `${Math.max(0, 100 - ratio)}%` }} />
-                  </BarTrack>
-                </Box>
-              );
-            })}
-          </Stack>
+
+                  <Stack spacing={1.6}>
+                    {section.rows.map((row) => {
+                      const meta = eventCategoryMeta[row.category];
+                      const ratio = section.total > 0 ? (row.amount / section.total) * 100 : 0;
+
+                      return (
+                        <Box key={`${section.currencyCode}-${row.category}`}>
+                          <Stack direction="row" justifyContent="space-between" mb={0.8}>
+                            <Typography variant="body2">{meta?.label ?? row.category}</Typography>
+                            <Typography color="text.secondary" variant="body2">
+                              {formatCurrencyAmount(row.amount, section.currencyCode)}
+                            </Typography>
+                          </Stack>
+                          <BarTrack>
+                            {row.segments.map((segment) => (
+                              <Tooltip
+                                key={segment.eventId}
+                                title={`${segment.title} • ${formatCurrencyAmount(segment.amount, section.currencyCode)}`}
+                              >
+                                <BarSegment
+                                  sx={{
+                                    width: `${section.total > 0 ? (segment.amount / section.total) * 100 : 0}%`,
+                                    bgcolor: segment.color,
+                                  }}
+                                />
+                              </Tooltip>
+                            ))}
+                            <BarRemainder sx={{ width: `${Math.max(0, 100 - ratio)}%` }} />
+                          </BarTrack>
+                        </Box>
+                      );
+                    })}
+                  </Stack>
+                </Stack>
+              ))}
+            </Stack>
+          )}
         </Stack>
       </CardContent>
     </Card>
   );
 };
 
-const buildCostSummaryRows = (events: ItineraryEvent[]) =>
-  Object.values(
+const buildCostSummarySections = (events: ItineraryEvent[]) =>
+  Array.from(
     events.reduce<
-      Record<
+      Map<
         string,
         {
-          category: ItineraryEvent['category'];
-          amount: number;
-          segments: Array<{
-            eventId: string;
-            title: string;
-            amount: number;
-            color: string;
-          }>;
+          currencyCode: string;
+          total: number;
+          rows: Map<
+            ItineraryEvent['category'],
+            {
+              category: ItineraryEvent['category'];
+              amount: number;
+              segments: Array<{
+                eventId: string;
+                title: string;
+                amount: number;
+                color: string;
+              }>;
+            }
+          >;
         }
       >
     >((accumulator, event) => {
-      const existingRow = accumulator[event.category] ?? {
+      const currencyCode = normalizeCurrencyCode(event.currencyCode);
+      if (!currencyCode || event.cost <= 0) {
+        return accumulator;
+      }
+
+      const section = accumulator.get(currencyCode) ?? {
+        currencyCode,
+        total: 0,
+        rows: new Map(),
+      };
+
+      const row = section.rows.get(event.category) ?? {
         category: event.category,
         amount: 0,
         segments: [],
       };
 
-      existingRow.amount += event.cost;
-      existingRow.segments.push({
+      row.amount += event.cost;
+      row.segments.push({
         eventId: event.id,
         title: event.title,
         amount: event.cost,
         color: event.color || getDefaultEventColor(event.category),
       });
 
-      accumulator[event.category] = existingRow;
+      section.total += event.cost;
+      section.rows.set(event.category, row);
+      accumulator.set(currencyCode, section);
       return accumulator;
-    }, {}),
+    }, new Map()),
   )
-    .map((row) => ({
-      ...row,
-      segments: [...row.segments].sort((left, right) => right.amount - left.amount),
+    .map(([, section]) => ({
+      currencyCode: section.currencyCode,
+      total: section.total,
+      rows: Array.from(section.rows.values())
+        .map((row) => ({
+          ...row,
+          segments: [...row.segments].sort((left, right) => right.amount - left.amount),
+        }))
+        .sort((left, right) => right.amount - left.amount),
     }))
-    .sort((left, right) => right.amount - left.amount);
+    .sort((left, right) => right.total - left.total);
 
 const BarTrack = ({ children }: { children: React.ReactNode }) => (
   <Box

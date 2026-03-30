@@ -326,6 +326,7 @@ internal static class TestDataFactory
             LocationLat = 35.0m,
             LocationLng = 139.0m,
             Cost = 25m,
+            CurrencyCode = "JPY",
             CreatedById = createdById,
             UpdatedById = updatedById,
             CreatedAtUtc = new DateTime(2026, 2, 1, 2, 0, 0, DateTimeKind.Utc),

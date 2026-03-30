@@ -2,7 +2,6 @@ import { ArrowRight, CalendarRange, Coins, MapPinned } from 'lucide-react';
 import { Button, Card, CardContent, Chip, Divider, Stack, Typography } from '@mui/material';
 import { Link as RouterLink } from 'react-router-dom';
 import { formatDateRange } from '../../lib/date';
-import { currencyFormatter } from '../../lib/utils';
 import type { Itinerary } from '../../types/itinerary';
 import type { User } from '../../types/user';
 import { UserAvatarGroup } from '../user/UserAvatarGroup';
@@ -11,10 +10,10 @@ interface ItineraryCardProps {
   itinerary: Itinerary;
   collaborators: User[];
   eventCount: number;
-  totalCost: number;
+  totalCostLabel: string;
 }
 
-export const ItineraryCard = ({ itinerary, collaborators, eventCount, totalCost }: ItineraryCardProps) => (
+export const ItineraryCard = ({ itinerary, collaborators, eventCount, totalCostLabel }: ItineraryCardProps) => (
   <Card sx={{ height: '100%' }}>
     <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.2, height: '100%' }}>
       <Stack direction="row" justifyContent="space-between" spacing={2}>
@@ -41,7 +40,7 @@ export const ItineraryCard = ({ itinerary, collaborators, eventCount, totalCost 
           label={formatDateRange(itinerary.startDate, itinerary.endDate)}
           variant="outlined"
         />
-        <Chip icon={<Coins size={14} />} label={currencyFormatter.format(totalCost)} variant="outlined" />
+        <Chip icon={<Coins size={14} />} label={totalCostLabel} variant="outlined" />
         <Chip label={`${eventCount} events`} variant="outlined" />
       </Stack>
 

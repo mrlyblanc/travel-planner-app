@@ -24,6 +24,7 @@ export interface ItineraryEvent {
   locationLat: number | null;
   locationLng: number | null;
   cost: number;
+  currencyCode: string | null;
   createdBy: string;
   updatedBy: string;
   createdAt: string;
@@ -45,6 +46,7 @@ export interface EventAuditSnapshot {
   locationLat: number | null;
   locationLng: number | null;
   cost: number | null;
+  currencyCode: string | null;
   updatedBy: string;
   updatedAt: string;
 }

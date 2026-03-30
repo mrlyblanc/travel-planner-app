@@ -54,6 +54,19 @@ export const formatTimezoneLabel = (timezone: string) =>
     .map((segment) => segment.replaceAll('_', ' '))
     .join('/');
 
+export const formatTimezoneCityLabel = (timezone: string) => {
+  const segments = timezone
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+
+  if (segments.length === 0) {
+    return '';
+  }
+
+  return segments[segments.length - 1].replaceAll('_', ' ');
+};
+
 const timezoneDisplayLabelCache = new Map<string, string>();
 
 const readTimezoneNamePart = (timezone: string, timeZoneName: 'long' | 'longOffset') =>
@@ -80,7 +93,12 @@ export const formatTimezoneDisplayLabel = (timezone: string) => {
   const longName = readTimezoneNamePart(normalizedTimezone, 'long');
   const fallbackName = formatTimezoneLabel(normalizedTimezone);
   const displayName = longName && longName !== offsetLabel ? longName : fallbackName;
-  const label = `(${offsetLabel}) ${displayName}`;
+  const cityLabel = formatTimezoneCityLabel(normalizedTimezone);
+  const shouldAppendCity =
+    cityLabel &&
+    !displayName.toLowerCase().includes(cityLabel.toLowerCase()) &&
+    displayName.toLowerCase() !== cityLabel.toLowerCase();
+  const label = `(${offsetLabel}) ${displayName}${shouldAppendCity ? ` • ${cityLabel}` : ''}`;
 
   timezoneDisplayLabelCache.set(normalizedTimezone, label);
   return label;

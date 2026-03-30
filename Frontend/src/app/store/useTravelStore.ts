@@ -602,6 +602,7 @@ export const useTravelStore = create<TravelState>((set, get) => ({
       locationLat: currentEvent.locationLat,
       locationLng: currentEvent.locationLng,
       cost: currentEvent.cost,
+      currencyCode: currentEvent.currencyCode,
     });
   },
 }));

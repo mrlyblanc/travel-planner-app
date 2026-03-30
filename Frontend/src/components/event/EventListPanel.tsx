@@ -13,8 +13,8 @@ import {
   useTheme,
 } from '@mui/material';
 import { useMemo, useState } from 'react';
+import { formatCurrencyAmount } from '../../lib/currency';
 import { formatDateTime } from '../../lib/date';
-import { currencyFormatter } from '../../lib/utils';
 import type { ItineraryEvent } from '../../types/event';
 import type { User } from '../../types/user';
 import { EmptyState } from '../common/EmptyState';
@@ -117,7 +117,7 @@ export const EventListPanel = ({ events, usersMap, selectedEventId, onSelectEven
                             {event.location}
                           </Typography>
                           <Typography color="text.secondary" variant="caption">
-                            {currencyFormatter.format(event.cost)} • Updated by {usersMap[event.updatedBy]?.name ?? 'Unknown'}
+                            {formatCurrencyAmount(event.cost, event.currencyCode)} • Updated by {usersMap[event.updatedBy]?.name ?? 'Unknown'}
                           </Typography>
                         </Stack>
                       }

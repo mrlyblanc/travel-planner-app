@@ -212,7 +212,8 @@ public sealed class UtilityAndEdgeCaseTests
             LocationAddress = eventEntity.LocationAddress,
             LocationLat = eventEntity.LocationLat,
             LocationLng = eventEntity.LocationLng,
-            Cost = eventEntity.Cost
+            Cost = eventEntity.Cost,
+            CurrencyCode = eventEntity.CurrencyCode
         });
 
         var audit = Assert.Single(eventRepository.AuditLogs);

@@ -43,6 +43,9 @@ public abstract class EventUpsertRequest : IValidatableObject
     [Range(0, 1000000)]
     public decimal? Cost { get; set; }
 
+    [StringLength(3, MinimumLength = 3)]
+    public string? CurrencyCode { get; set; }
+
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
         if (EndDateTime <= StartDateTime)
@@ -50,6 +53,13 @@ public abstract class EventUpsertRequest : IValidatableObject
             yield return new ValidationResult(
                 "EndDateTime must be after StartDateTime.",
                 [nameof(EndDateTime)]);
+        }
+
+        if (!string.IsNullOrWhiteSpace(CurrencyCode) && CurrencyCode.Trim().Length != 3)
+        {
+            yield return new ValidationResult(
+                "CurrencyCode must be a valid ISO 4217 currency code.",
+                [nameof(CurrencyCode)]);
         }
     }
 }
