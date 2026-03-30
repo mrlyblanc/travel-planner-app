@@ -225,4 +225,87 @@ public sealed class ItineraryServiceTests
             UserIds = [ava.Id]
         }));
     }
+
+    [Fact]
+    public async Task RemoveMemberAsync_WhenOwnerRemovesContributor_RemovesMemberAndNotifies()
+    {
+        var ava = TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com");
+        var luca = TestDataFactory.CreateUser("user-luca", "Luca Reyes", "luca@example.com");
+        var itinerary = TestDataFactory.CreateItinerary("itinerary-tokyo", ava.Id);
+        itinerary.Members.Add(TestDataFactory.CreateMember(itinerary, ava));
+        itinerary.Members.Add(TestDataFactory.CreateMember(itinerary, luca));
+
+        var userRepository = new FakeUserRepository();
+        userRepository.Users.AddRange([ava, luca]);
+        var itineraryRepository = new FakeItineraryRepository();
+        itineraryRepository.Itineraries.Add(itinerary);
+        var notifier = new FakeRealtimeNotifier();
+        var unitOfWork = new FakeUnitOfWork();
+
+        var service = new ItineraryService(
+            new FakeCurrentUserAccessor { CurrentUserId = ava.Id },
+            userRepository,
+            itineraryRepository,
+            unitOfWork,
+            notifier);
+
+        var originalVersion = itinerary.ConcurrencyToken;
+        var response = await service.RemoveMemberAsync(itinerary.Id, luca.Id, originalVersion);
+
+        Assert.DoesNotContain(response, member => member.UserId == luca.Id);
+        Assert.Single(response, member => member.UserId == ava.Id);
+        Assert.Single(notifier.Notifications);
+        Assert.Equal("itinerary.members.updated", notifier.Notifications[0].Type);
+        Assert.NotEqual(originalVersion, itinerary.ConcurrencyToken);
+        Assert.Equal(1, unitOfWork.SaveChangesCalls);
+    }
+
+    [Fact]
+    public async Task RemoveMemberAsync_WhenRemovingCreator_ThrowsBadRequestException()
+    {
+        var ava = TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com");
+        var luca = TestDataFactory.CreateUser("user-luca", "Luca Reyes", "luca@example.com");
+        var itinerary = TestDataFactory.CreateItinerary("itinerary-tokyo", ava.Id);
+        itinerary.Members.Add(TestDataFactory.CreateMember(itinerary, ava));
+        itinerary.Members.Add(TestDataFactory.CreateMember(itinerary, luca));
+
+        var userRepository = new FakeUserRepository();
+        userRepository.Users.AddRange([ava, luca]);
+        var itineraryRepository = new FakeItineraryRepository();
+        itineraryRepository.Itineraries.Add(itinerary);
+
+        var service = new ItineraryService(
+            new FakeCurrentUserAccessor { CurrentUserId = ava.Id },
+            userRepository,
+            itineraryRepository,
+            new FakeUnitOfWork(),
+            new FakeRealtimeNotifier());
+
+        await Assert.ThrowsAsync<BadRequestException>(() => service.RemoveMemberAsync(itinerary.Id, ava.Id, itinerary.ConcurrencyToken));
+    }
+
+    [Fact]
+    public async Task RemoveMemberAsync_WhenTargetUserIsNotMember_ThrowsNotFoundException()
+    {
+        var ava = TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com");
+        var luca = TestDataFactory.CreateUser("user-luca", "Luca Reyes", "luca@example.com");
+        var mina = TestDataFactory.CreateUser("user-mina", "Mina Park", "mina@example.com");
+        var itinerary = TestDataFactory.CreateItinerary("itinerary-tokyo", ava.Id);
+        itinerary.Members.Add(TestDataFactory.CreateMember(itinerary, ava));
+        itinerary.Members.Add(TestDataFactory.CreateMember(itinerary, luca));
+
+        var userRepository = new FakeUserRepository();
+        userRepository.Users.AddRange([ava, luca, mina]);
+        var itineraryRepository = new FakeItineraryRepository();
+        itineraryRepository.Itineraries.Add(itinerary);
+
+        var service = new ItineraryService(
+            new FakeCurrentUserAccessor { CurrentUserId = ava.Id },
+            userRepository,
+            itineraryRepository,
+            new FakeUnitOfWork(),
+            new FakeRealtimeNotifier());
+
+        await Assert.ThrowsAsync<NotFoundException>(() => service.RemoveMemberAsync(itinerary.Id, mina.Id, itinerary.ConcurrencyToken));
+    }
 }

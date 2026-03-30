@@ -48,6 +48,7 @@ interface TravelState {
   createItinerary: (input: ItineraryInput) => Promise<string>;
   updateItinerary: (itineraryId: string, input: ItineraryInput) => Promise<void>;
   shareItinerary: (itineraryId: string, memberIds: string[]) => Promise<void>;
+  removeItineraryMember: (itineraryId: string, userId: string) => Promise<void>;
   createEvent: (itineraryId: string, input: EventInput) => Promise<string>;
   updateEvent: (eventId: string, input: EventInput) => Promise<void>;
   deleteEvent: (eventId: string) => Promise<void>;
@@ -475,6 +476,37 @@ export const useTravelStore = create<TravelState>((set, get) => ({
 
     const session = await requireSession();
     const replacement = await travelApi.replaceItineraryMembers(session.accessToken, itineraryId, memberIds, itinerary.version);
+    const refreshedDto = await travelApi.getItinerary(session.accessToken, itineraryId);
+    const refreshedItinerary = travelApi.mapItinerary(
+      {
+        ...refreshedDto,
+        version: replacement.version,
+      },
+      replacement.members,
+    );
+
+    set((currentState) => ({
+      users: mergeUsers(currentState.users, replacement.members.map(memberToUser)),
+      itineraries: upsertItinerary(currentState.itineraries, refreshedItinerary),
+      itineraryMembers: {
+        ...currentState.itineraryMembers,
+        [itineraryId]: replacement.members,
+      },
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+      error: null,
+    }));
+  },
+
+  removeItineraryMember: async (itineraryId, userId) => {
+    const state = get();
+    const itinerary = state.itineraries.find((entry) => entry.id === itineraryId);
+    if (!itinerary) {
+      return;
+    }
+
+    const session = await requireSession();
+    const replacement = await travelApi.removeItineraryMember(session.accessToken, itineraryId, userId, itinerary.version);
     const refreshedDto = await travelApi.getItinerary(session.accessToken, itineraryId);
     const refreshedItinerary = travelApi.mapItinerary(
       {

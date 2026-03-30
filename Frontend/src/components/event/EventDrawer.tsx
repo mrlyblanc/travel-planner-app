@@ -52,6 +52,7 @@ interface EventDrawerProps {
   draftRange: { start: string; end: string } | null;
   usersMap: Record<string, User>;
   canManage: boolean;
+  canDelete: boolean;
   onLoadHistory: (eventId: string) => Promise<void>;
   onClose: () => void;
   onSave: (input: EventInput, eventId?: string) => Promise<void> | void;
@@ -135,10 +136,51 @@ const combineDateAndTime = (dateValue: Dayjs | null, timeValue: Dayjs | null) =>
   return dateValue.hour(timeValue.hour()).minute(timeValue.minute()).second(0).millisecond(0);
 };
 
+const buildDraftRangeValues = (draftRange: { start: string; end: string } | null) => {
+  if (!draftRange) {
+    return null;
+  }
+
+  const startDateTime = dayjs(draftRange.start);
+  const parsedEndDateTime = dayjs(draftRange.end);
+
+  if (!startDateTime.isValid()) {
+    return null;
+  }
+
+  const hasExplicitTime = draftRange.start.includes('T') || draftRange.end.includes('T');
+
+  if (!hasExplicitTime) {
+    const startDate = startDateTime.startOf('day');
+    const inclusiveEndDate = parsedEndDateTime.isValid()
+      ? parsedEndDateTime.subtract(1, 'day').startOf('day')
+      : startDate;
+    const endDate = inclusiveEndDate.isBefore(startDate, 'day') ? startDate : inclusiveEndDate;
+
+    return {
+      startDate,
+      startTime: startDate.hour(9).minute(0),
+      endDate,
+      endTime: endDate.hour(10).minute(0),
+    };
+  }
+
+  const endDateTime = parsedEndDateTime.isValid() && parsedEndDateTime.isAfter(startDateTime)
+    ? parsedEndDateTime
+    : startDateTime.add(1, 'hour');
+
+  return {
+    startDate: startDateTime,
+    startTime: startDateTime,
+    endDate: endDateTime,
+    endTime: endDateTime,
+  };
+};
+
 const buildDefaultValues = (
   _itinerary: Itinerary,
   event: ItineraryEvent | null,
-  _draftRange: { start: string; end: string } | null,
+  draftRange: { start: string; end: string } | null,
 ): EventFormValues => {
   if (event) {
     const startDateTime = dayjs(event.startDateTime);
@@ -159,6 +201,26 @@ const buildDefaultValues = (
       locationLat: event.locationLat,
       locationLng: event.locationLng,
       cost: roundCurrency(event.cost).toFixed(2),
+    };
+  }
+
+  const draftRangeValues = buildDraftRangeValues(draftRange);
+  if (draftRangeValues) {
+    return {
+      title: '',
+      description: '',
+      category: '',
+      color: '',
+      startDate: draftRangeValues.startDate,
+      startTime: draftRangeValues.startTime,
+      endDate: draftRangeValues.endDate,
+      endTime: draftRangeValues.endTime,
+      timezone: '',
+      location: '',
+      locationAddress: '',
+      locationLat: null,
+      locationLng: null,
+      cost: '',
     };
   }
 
@@ -189,6 +251,7 @@ export const EventDrawer = ({
   draftRange,
   usersMap,
   canManage,
+  canDelete,
   onLoadHistory,
   onClose,
   onSave,
@@ -827,7 +890,7 @@ export const EventDrawer = ({
 
             <Stack direction="row" justifyContent="space-between" pt={1}>
               <Box>
-                {event && canManage ? (
+                {event && canDelete ? (
                   <IconButton color="error" onClick={() => setConfirmDeleteOpen(true)}>
                     <Trash2 size={18} />
                   </IconButton>

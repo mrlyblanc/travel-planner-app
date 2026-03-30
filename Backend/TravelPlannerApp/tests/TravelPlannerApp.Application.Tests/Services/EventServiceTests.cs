@@ -177,6 +177,46 @@ public sealed class EventServiceTests
     }
 
     [Fact]
+    public async Task DeleteEventAsync_WhenCurrentUserOwnsItinerary_CanDeleteAnotherUsersEvent()
+    {
+        var ava = TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com");
+        var luca = TestDataFactory.CreateUser("user-luca", "Luca Reyes", "luca@example.com");
+        var itinerary = TestDataFactory.CreateItinerary("itinerary-tokyo", ava.Id);
+        itinerary.Members.Add(TestDataFactory.CreateMember(itinerary, ava));
+        itinerary.Members.Add(TestDataFactory.CreateMember(itinerary, luca));
+        var existingEvent = TestDataFactory.CreateEvent("evt-1", itinerary.Id, luca.Id, luca.Id, "Dinner");
+
+        var eventRepository = new FakeEventRepository();
+        eventRepository.Events.Add(existingEvent);
+        var service = CreateService(ava, [ava, luca], [itinerary], [existingEvent], eventRepository);
+
+        await service.DeleteEventAsync(existingEvent.Id, existingEvent.ConcurrencyToken);
+
+        Assert.Empty(eventRepository.Events);
+        Assert.Single(eventRepository.AuditLogs);
+        Assert.Equal(EventAuditAction.Deleted, eventRepository.AuditLogs[0].Action);
+    }
+
+    [Fact]
+    public async Task DeleteEventAsync_WhenCurrentUserIsMemberButNotEventCreatorOrItineraryOwner_ThrowsForbiddenException()
+    {
+        var ava = TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com");
+        var luca = TestDataFactory.CreateUser("user-luca", "Luca Reyes", "luca@example.com");
+        var mina = TestDataFactory.CreateUser("user-mina", "Mina Park", "mina@example.com");
+        var itinerary = TestDataFactory.CreateItinerary("itinerary-tokyo", ava.Id);
+        itinerary.Members.Add(TestDataFactory.CreateMember(itinerary, ava));
+        itinerary.Members.Add(TestDataFactory.CreateMember(itinerary, luca));
+        itinerary.Members.Add(TestDataFactory.CreateMember(itinerary, mina));
+        var existingEvent = TestDataFactory.CreateEvent("evt-1", itinerary.Id, ava.Id, ava.Id, "Dinner");
+
+        var eventRepository = new FakeEventRepository();
+        eventRepository.Events.Add(existingEvent);
+        var service = CreateService(luca, [ava, luca, mina], [itinerary], [existingEvent], eventRepository);
+
+        await Assert.ThrowsAsync<ForbiddenException>(() => service.DeleteEventAsync(existingEvent.Id, existingEvent.ConcurrencyToken));
+    }
+
+    [Fact]
     public async Task UpdateEventAsync_WithoutExpectedVersion_ThrowsPreconditionRequiredException()
     {
         var ava = TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com");

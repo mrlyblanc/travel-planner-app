@@ -1,4 +1,4 @@
-import interactionPlugin, { type EventResizeDoneArg } from '@fullcalendar/interaction';
+import interactionPlugin, { type DateClickArg, type EventResizeDoneArg } from '@fullcalendar/interaction';
 import type { DatesSetArg, EventClickArg, EventDropArg, EventInput } from '@fullcalendar/core';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import FullCalendar from '@fullcalendar/react';
@@ -70,6 +70,19 @@ export const ItineraryCalendar = ({
       <FullCalendar
         ref={calendarRef}
         allDaySlot={false}
+        dateClick={(arg: DateClickArg) => {
+          if (!canManage || arg.dayEl.closest('.fc-event')) {
+            return;
+          }
+
+          const start = dayjs(arg.date);
+          const end = arg.allDay ? start.add(1, 'day') : start.add(1, 'hour');
+
+          onSelectSlot({
+            start: arg.allDay ? start.format('YYYY-MM-DD') : start.format(),
+            end: arg.allDay ? end.format('YYYY-MM-DD') : end.format(),
+          });
+        }}
         editable={canManage}
         eventClick={(arg: EventClickArg) => onSelectEvent(arg.event.extendedProps.sourceEvent as ItineraryEvent)}
         eventDisplay="block"

@@ -50,6 +50,7 @@ export const ItineraryDetailsPage = () => {
   const allEvents = useTravelStore((state) => state.events);
   const updateItinerary = useTravelStore((state) => state.updateItinerary);
   const shareItinerary = useTravelStore((state) => state.shareItinerary);
+  const removeItineraryMember = useTravelStore((state) => state.removeItineraryMember);
   const createEvent = useTravelStore((state) => state.createEvent);
   const updateEvent = useTravelStore((state) => state.updateEvent);
   const deleteEvent = useTravelStore((state) => state.deleteEvent);
@@ -81,7 +82,11 @@ export const ItineraryDetailsPage = () => {
   const sortedEvents = getUpcomingEvents(events);
   const totalCost = getTotalCost(events);
   const canManage = itinerary.memberIds.includes(currentUserId);
+  const isOwner = itinerary.createdBy === currentUserId;
   const selectedEvent = selectedEventId ? events.find((event) => event.id === selectedEventId) ?? null : null;
+  const canDeleteSelectedEvent = Boolean(
+    selectedEvent && currentUserId && (isOwner || selectedEvent.createdBy === currentUserId),
+  );
   const members = itinerary.memberIds.map((memberId) => usersMap[memberId]).filter(Boolean);
   const collaborators = members.filter((member) => member.id !== currentUserId);
   const selectedEventHistory = selectedEvent ? eventHistory[selectedEvent.id] ?? [] : [];
@@ -120,12 +125,7 @@ export const ItineraryDetailsPage = () => {
 
   const openCreateEvent = (selection?: { start: string; end: string }) => {
     setSelectedEventId(null);
-    setDraftRange(
-      selection ?? {
-        start: `${itinerary.startDate}T09:00:00`,
-        end: `${itinerary.startDate}T10:00:00`,
-      },
-    );
+    setDraftRange(selection ?? null);
     setEventDrawerOpen(true);
   };
 
@@ -341,8 +341,14 @@ export const ItineraryDetailsPage = () => {
       />
 
       <ShareItineraryDialog
+        canManageMembers={isOwner}
+        currentUserId={currentUserId}
         itinerary={itinerary}
         onClose={() => setShareDialogOpen(false)}
+        onRemoveMember={async (userId) => {
+          await removeItineraryMember(itinerary.id, userId);
+          showToast('Contributor removed', 'warning');
+        }}
         onSearchUsers={searchUsers}
         onSubmit={async (memberIds) => {
           await shareItinerary(itinerary.id, memberIds);
@@ -355,6 +361,7 @@ export const ItineraryDetailsPage = () => {
 
       <EventDrawer
         canManage={canManage}
+        canDelete={canDeleteSelectedEvent}
         auditHistory={selectedEventHistory}
         draftRange={draftRange}
         event={selectedEvent}

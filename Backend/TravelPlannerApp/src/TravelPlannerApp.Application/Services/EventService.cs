@@ -151,6 +151,7 @@ public sealed class EventService : IEventService
 
         await EnsureItineraryAccessAsync(eventEntity.ItineraryId, currentUser.Id, cancellationToken);
         ConcurrencyTokenHelper.EnsureMatches(eventEntity.ConcurrencyToken, expectedVersion);
+        await EnsureCanDeleteEventAsync(eventEntity, currentUser.Id, cancellationToken);
 
         var deletedAt = DateTime.UtcNow;
         eventEntity.UpdatedById = currentUser.Id;
@@ -220,6 +221,24 @@ public sealed class EventService : IEventService
         }
 
         throw new ForbiddenException($"You do not have access to itinerary '{itineraryId}'.");
+    }
+
+    private async Task EnsureCanDeleteEventAsync(Event eventEntity, string currentUserId, CancellationToken cancellationToken)
+    {
+        if (string.Equals(eventEntity.CreatedById, currentUserId, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var itinerary = await _itineraryRepository.GetByIdAsync(eventEntity.ItineraryId, cancellationToken)
+            ?? throw new NotFoundException($"Itinerary '{eventEntity.ItineraryId}' was not found.");
+
+        if (string.Equals(itinerary.CreatedById, currentUserId, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        throw new ForbiddenException("Only the event creator or itinerary owner can delete this event.");
     }
 
     private static EventAuditLog CreateAuditLog(Event eventEntity, EventAuditAction action, string summary, string changedByUserId, DateTime changedAtUtc)

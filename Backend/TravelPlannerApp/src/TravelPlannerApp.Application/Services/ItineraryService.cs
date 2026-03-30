@@ -131,12 +131,7 @@ public sealed class ItineraryService : IItineraryService
             await ThrowItineraryAccessExceptionAsync(itineraryId, cancellationToken);
         }
 
-        var members = await _itineraryRepository.ListMembersAsync(itineraryId, cancellationToken);
-        return members
-            .OrderBy(static member => member.User?.Name, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(static member => member.UserId, StringComparer.OrdinalIgnoreCase)
-            .Select(static member => member.ToResponse())
-            .ToList();
+        return await ListMemberResponsesAsync(itineraryId, cancellationToken);
     }
 
     public async Task<IReadOnlyList<ItineraryMemberResponse>> ReplaceMembersAsync(string itineraryId, string? expectedVersion, ReplaceItineraryMembersRequest request, CancellationToken cancellationToken = default)
@@ -214,12 +209,48 @@ public sealed class ItineraryService : IItineraryService
         itinerary.UpdatedAtUtc = DateTime.UtcNow;
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        var response = itinerary.Members
-            .OrderBy(static member => member.User?.Name, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(static member => member.UserId, StringComparer.OrdinalIgnoreCase)
-            .Select(static member => member.ToResponse())
-            .ToList();
+        var response = await ListMemberResponsesAsync(itinerary.Id, cancellationToken);
 
+        await _notifier.NotifyAsync(
+            itinerary.Id,
+            new ItineraryRealtimeNotification("itinerary.members.updated", itinerary.Id, itinerary.Id, itinerary.UpdatedAtUtc, response),
+            cancellationToken);
+
+        return response;
+    }
+
+    public async Task<IReadOnlyList<ItineraryMemberResponse>> RemoveMemberAsync(string itineraryId, string userId, string? expectedVersion, CancellationToken cancellationToken = default)
+    {
+        var currentUser = await GetCurrentUserAsync(cancellationToken);
+        var itinerary = await _itineraryRepository.GetAccessibleByIdAsync(currentUser.Id, itineraryId, cancellationToken);
+        if (itinerary is null)
+        {
+            await ThrowItineraryAccessExceptionAsync(itineraryId, cancellationToken);
+        }
+
+        ConcurrencyTokenHelper.EnsureMatches(itinerary!.ConcurrencyToken, expectedVersion);
+
+        var normalizedUserId = userId.Trim();
+        if (string.Equals(itinerary.CreatedById, normalizedUserId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new BadRequestException("The itinerary owner cannot be removed.");
+        }
+
+        var memberToRemove = itinerary.Members.FirstOrDefault(member =>
+            string.Equals(member.UserId, normalizedUserId, StringComparison.OrdinalIgnoreCase));
+
+        if (memberToRemove is null)
+        {
+            throw new NotFoundException($"Member '{normalizedUserId}' was not found in itinerary '{itineraryId}'.");
+        }
+
+        _itineraryRepository.RemoveMembers([memberToRemove]);
+        itinerary.ConcurrencyToken = ConcurrencyTokenHelper.NewToken();
+        itinerary.UpdatedAtUtc = DateTime.UtcNow;
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        var response = await ListMemberResponsesAsync(itinerary.Id, cancellationToken);
         await _notifier.NotifyAsync(
             itinerary.Id,
             new ItineraryRealtimeNotification("itinerary.members.updated", itinerary.Id, itinerary.Id, itinerary.UpdatedAtUtc, response),
@@ -254,5 +285,15 @@ public sealed class ItineraryService : IItineraryService
         }
 
         throw new ForbiddenException($"You do not have access to itinerary '{itineraryId}'.");
+    }
+
+    private async Task<List<ItineraryMemberResponse>> ListMemberResponsesAsync(string itineraryId, CancellationToken cancellationToken)
+    {
+        var members = await _itineraryRepository.ListMembersAsync(itineraryId, cancellationToken);
+        return members
+            .OrderBy(static member => member.User?.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(static member => member.UserId, StringComparer.OrdinalIgnoreCase)
+            .Select(static member => member.ToResponse())
+            .ToList();
     }
 }

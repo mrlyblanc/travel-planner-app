@@ -598,6 +598,19 @@ export const travelApi = {
     };
   },
 
+  async removeItineraryMember(token: string, itineraryId: string, userId: string, version: string) {
+    const response = await apiRequest<ItineraryMemberResponseDto[]>(`/itineraries/${itineraryId}/members/${userId}`, {
+      method: 'DELETE',
+      token,
+      ifMatch: toIfMatchHeader(version),
+    });
+
+    return {
+      members: response.data.map(mapMemberResponse),
+      version: response.etag ?? version,
+    };
+  },
+
   async listEvents(token: string, itineraryId: string) {
     const response = await apiRequest<EventResponseDto[]>(`/itineraries/${itineraryId}/events`, { token });
     return response.data.map(mapEventResponse);

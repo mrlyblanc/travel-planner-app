@@ -525,13 +525,13 @@ public sealed class MinimalApiEndpointsTests
     }
 
     [Fact]
-    public async Task DeleteEvent_AfterCreation_LeavesAuditHistoryAccessible()
+    public async Task DeleteEvent_WhenItineraryOwnerDeletesMemberEvent_LeavesAuditHistoryAccessible()
     {
         using var factory = new TravelPlannerApiFactory();
         using var creatorClient = await factory.CreateAuthenticatedClientAsync(AvaEmail);
         using var memberClient = await factory.CreateAuthenticatedClientAsync(LucaEmail);
 
-        var createResponse = await creatorClient.PostAsJsonAsync("/api/itineraries/itinerary-tokyo/events", new CreateEventRequest
+        var createResponse = await memberClient.PostAsJsonAsync("/api/itineraries/itinerary-tokyo/events", new CreateEventRequest
         {
             Title = "Delete Me",
             Category = EventCategory.Other,
@@ -542,7 +542,7 @@ public sealed class MinimalApiEndpointsTests
         createResponse.EnsureSuccessStatusCode();
         var created = await createResponse.Content.ReadFromJsonAsync<EventResponse>(JsonOptions);
 
-        var deleteResponse = await memberClient.SendAsync(CreateIfMatchRequest(HttpMethod.Delete, $"/api/events/{created!.Id}", null, createResponse.Headers.ETag!.Tag!));
+        var deleteResponse = await creatorClient.SendAsync(CreateIfMatchRequest(HttpMethod.Delete, $"/api/events/{created!.Id}", null, createResponse.Headers.ETag!.Tag!));
         Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
 
         var history = await memberClient.GetFromJsonAsync<List<EventAuditLogResponse>>($"/api/events/{created.Id}/history", JsonOptions);
@@ -550,6 +550,41 @@ public sealed class MinimalApiEndpointsTests
         Assert.NotNull(history);
         Assert.Equal(2, history!.Count);
         Assert.Contains(history, log => log.Action == EventAuditAction.Deleted);
+    }
+
+    [Fact]
+    public async Task DeleteEvent_WhenMemberDeletesOwnEvent_ReturnsNoContent()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync(LucaEmail);
+
+        var createResponse = await client.PostAsJsonAsync("/api/itineraries/itinerary-tokyo/events", new CreateEventRequest
+        {
+            Title = "Delete My Own Event",
+            Category = EventCategory.Other,
+            StartDateTime = new DateTime(2026, 4, 17, 13, 0, 0),
+            EndDateTime = new DateTime(2026, 4, 17, 14, 0, 0),
+            Timezone = "Asia/Tokyo"
+        }, JsonOptions);
+        createResponse.EnsureSuccessStatusCode();
+        var created = await createResponse.Content.ReadFromJsonAsync<EventResponse>(JsonOptions);
+
+        var deleteResponse = await client.SendAsync(CreateIfMatchRequest(HttpMethod.Delete, $"/api/events/{created!.Id}", null, createResponse.Headers.ETag!.Tag!));
+
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeleteEvent_WhenMemberDeletesAnotherUsersEvent_ReturnsForbidden()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var ownerClient = await factory.CreateAuthenticatedClientAsync(AvaEmail);
+        using var memberClient = await factory.CreateAuthenticatedClientAsync(LucaEmail);
+        var staleEtag = await GetEtagAsync(ownerClient, "/api/events/evt-tokyo-1");
+
+        var response = await memberClient.SendAsync(CreateIfMatchRequest(HttpMethod.Delete, "/api/events/evt-tokyo-1", null, staleEtag));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -618,6 +653,48 @@ public sealed class MinimalApiEndpointsTests
         }, staleEtag));
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task RemoveMember_WhenOwnerRemovesContributor_ReturnsUpdatedMembers()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
+        var staleEtag = await GetEtagAsync(client, "/api/itineraries/itinerary-tokyo/members");
+
+        var response = await client.SendAsync(CreateIfMatchRequest(HttpMethod.Delete, "/api/itineraries/itinerary-tokyo/members/user-mina", null, staleEtag));
+
+        response.EnsureSuccessStatusCode();
+        Assert.True(response.Headers.ETag is not null);
+        var members = await response.Content.ReadFromJsonAsync<List<ItineraryMemberResponse>>(JsonOptions);
+
+        Assert.NotNull(members);
+        Assert.DoesNotContain(members!, member => member.UserId == "user-mina");
+        Assert.Contains(members!, member => member.UserId == "user-ava");
+    }
+
+    [Fact]
+    public async Task RemoveMember_WhenUserIsNotOwner_ReturnsForbidden()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync(LucaEmail);
+        var staleEtag = await GetEtagAsync(client, "/api/itineraries/itinerary-tokyo/members");
+
+        var response = await client.SendAsync(CreateIfMatchRequest(HttpMethod.Delete, "/api/itineraries/itinerary-tokyo/members/user-mina", null, staleEtag));
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task RemoveMember_WhenTargetingOwner_ReturnsBadRequestProblem()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
+        var staleEtag = await GetEtagAsync(client, "/api/itineraries/itinerary-tokyo/members");
+
+        var response = await client.SendAsync(CreateIfMatchRequest(HttpMethod.Delete, "/api/itineraries/itinerary-tokyo/members/user-ava", null, staleEtag));
+
+        await AssertProblemAsync(response, HttpStatusCode.BadRequest, "Bad Request");
     }
 
     [Fact]

@@ -45,6 +45,26 @@ public static class ItineraryMemberEndpoints
             .RequireIfMatchHeader()
             .WithSummary("Replace itinerary members");
 
+        group.MapDelete("/{userId}", async Task<IResult> (string itineraryId, string userId, IItineraryService service, IItineraryRepository itineraryRepository, IAuthorizationService authorizationService, HttpContext httpContext, CancellationToken cancellationToken) =>
+        {
+            var itinerary = await itineraryRepository.GetByIdAsync(itineraryId, cancellationToken);
+            if (itinerary is not null)
+            {
+                var authorizationResult = await authorizationService.AuthorizeAsync(httpContext.User, itinerary, AuthorizationPolicies.ResourceOwner);
+                if (!authorizationResult.Succeeded)
+                {
+                    return Results.Forbid();
+                }
+            }
+
+            var members = await service.RemoveMemberAsync(itineraryId, userId, httpContext.Request.GetIfMatchVersion(), cancellationToken);
+            var responseItinerary = await service.GetItineraryByIdAsync(itineraryId, cancellationToken);
+            httpContext.Response.SetETag(responseItinerary.Version);
+            return Results.Ok(members);
+        })
+            .RequireIfMatchHeader()
+            .WithSummary("Remove a contributor from an itinerary");
+
         return builder;
     }
 }
