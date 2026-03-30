@@ -506,8 +506,9 @@ public sealed class MinimalApiEndpointsTests
     public async Task UpdateEvent_WhenUserIsNotMember_ReturnsForbidden()
     {
         using var factory = new TravelPlannerApiFactory();
+        using var ownerClient = await factory.CreateAuthenticatedClientAsync(AvaEmail);
+        var staleEtag = await GetEtagAsync(ownerClient, "/api/events/evt-tokyo-1");
         using var client = await factory.CreateAuthenticatedClientAsync(NoahEmail);
-        var staleEtag = await GetEtagAsync(client, "/api/events/evt-tokyo-1");
 
         var response = await client.SendAsync(CreateIfMatchRequest(HttpMethod.Put, "/api/events/evt-tokyo-1", new UpdateEventRequest
         {

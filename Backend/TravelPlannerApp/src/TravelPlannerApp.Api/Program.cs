@@ -7,6 +7,7 @@ using TravelPlannerApp.Infrastructure;
 DotEnvLoader.Load();
 
 var builder = WebApplication.CreateBuilder(args);
+builder.AddAzureConfiguration(args);
 builder.AddAppLogging();
 
 try

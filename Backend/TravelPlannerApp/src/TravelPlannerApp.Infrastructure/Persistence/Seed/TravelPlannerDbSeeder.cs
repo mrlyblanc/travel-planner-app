@@ -31,6 +31,12 @@ public sealed class TravelPlannerDbSeeder
 
     public async Task SeedAsync(CancellationToken cancellationToken = default)
     {
+        if (!IsEnabled(_configuration["Seed:Enabled"]))
+        {
+            _logger.LogInformation("Seed data is disabled for this environment");
+            return;
+        }
+
         if (await _dbContext.Users.AnyAsync(cancellationToken))
         {
             _logger.LogDebug("Seed data skipped because users already exist");
@@ -83,6 +89,11 @@ public sealed class TravelPlannerDbSeeder
         }
 
         return password;
+    }
+
+    private static bool IsEnabled(string? rawValue)
+    {
+        return bool.TryParse(rawValue, out var enabled) && enabled;
     }
 
     private static List<Itinerary> CreateItineraries()

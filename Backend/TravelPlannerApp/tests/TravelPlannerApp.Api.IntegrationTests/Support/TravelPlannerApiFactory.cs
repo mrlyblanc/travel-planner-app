@@ -24,11 +24,13 @@ public sealed class TravelPlannerApiFactory : WebApplicationFactory<Program>
         {
             configurationBuilder.AddInMemoryCollection(new Dictionary<string, string?>
             {
+                ["Database:ApplyMigrationsOnStartup"] = "true",
                 ["Jwt:Issuer"] = "TravelPlannerApp.Tests",
                 ["Jwt:Audience"] = "TravelPlannerApp.Tests.Client",
                 ["Jwt:Secret"] = "integration-tests-secret-key-1234567890",
                 ["Jwt:TokenLifetimeMinutes"] = "120",
                 ["Jwt:RefreshTokenLifetimeDays"] = "14",
+                ["Seed:Enabled"] = "true",
                 ["Seed:DefaultUserPassword"] = SeedPassword
             });
         });

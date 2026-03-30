@@ -51,6 +51,12 @@ public static class DependencyInjection
 
         logger.LogInformation("Initialising database with provider {ProviderName}", dbContext.Database.ProviderName);
 
+        if (!IsEnabled(configuration["Database:ApplyMigrationsOnStartup"]))
+        {
+            logger.LogInformation("Database startup initialization is disabled");
+            return;
+        }
+
         if (dbContext.Database.ProviderName == "Microsoft.EntityFrameworkCore.Sqlite")
         {
             await dbContext.Database.EnsureCreatedAsync();
@@ -301,5 +307,10 @@ public static class DependencyInjection
         {
             throw new InvalidOperationException($"{settingName} must include a database name.");
         }
+    }
+
+    private static bool IsEnabled(string? rawValue)
+    {
+        return bool.TryParse(rawValue, out var enabled) && enabled;
     }
 }

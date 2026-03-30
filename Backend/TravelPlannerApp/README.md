@@ -33,6 +33,13 @@ ASP.NET Core Minimal API backend for the Travel Itinerary App.
 
 Tracked `appsettings*.json` files only contain safe placeholders or local defaults. Real secrets should stay in `.env`.
 
+Configuration precedence is now Azure-friendly:
+1. `appsettings.json`
+2. `appsettings.{Environment}.json`
+3. Azure Key Vault, when `Azure__KeyVault__VaultUri` is configured
+4. environment variables, including `.env` and Azure App Service settings
+5. command-line arguments
+
 ## Quick Start
 1. If you want a local SQL Server container, start it from this folder:
    ```bash
@@ -58,10 +65,16 @@ The API also applies migrations on startup for a fresh SQL Server database. Olde
 - `Jwt__Audience`
 - `Jwt__Secret`
 - `Jwt__TokenLifetimeMinutes`
+- `Database__ApplyMigrationsOnStartup`
+- `Seed__Enabled`
 - `Seed__DefaultUserPassword`
 
 Optional when using Docker Compose:
 - `MSSQL_SA_PASSWORD`
+
+Optional for Azure:
+- `Azure__KeyVault__VaultUri`
+- `Azure__ManagedIdentityClientId`
 
 ## Authentication
 The API uses JWT bearer authentication.
@@ -89,12 +102,14 @@ Ownership rules:
 - user profile updates: only the profile owner
 - itinerary updates: only the itinerary creator
 - itinerary member replacement: only the itinerary creator
-- event updates and deletes: any itinerary member
+- event updates and deletes: only the event creator
 
 General access rules:
-- authenticated users can list and read users
+- authenticated users can search users
 - itinerary and event reads require itinerary membership
-- itinerary members can create, update, and delete events
+- itinerary members can create events
+- itinerary members can read shared itinerary events
+- only the event creator can update or delete that event
 
 ## API Versioning
 - Header-based versioning
@@ -126,6 +141,14 @@ Seeded users include:
 
 All seeded users use the password from `Seed__DefaultUserPassword`.
 
+Seed data is environment-controlled:
+- development default: enabled
+- production default: disabled
+
+Startup migrations are also environment-controlled:
+- development default: enabled
+- production default: disabled
+
 ## Migrations
 Create a new migration:
 ```bash
@@ -138,6 +161,48 @@ dotnet ef database update --project src/TravelPlannerApp.Infrastructure/TravelPl
 ```
 
 If you already have a legacy SQL Server database created before migrations were in place, start the API once before using `dotnet ef database update` again. Startup will create the migration history baseline for that database.
+
+## Azure Configuration
+The API is now prepared for Azure App Service and Azure Key Vault.
+
+### Supported Azure secret/config sources
+- Azure App Service application settings such as `Jwt__Secret`
+- Azure App Service connection strings such as `SQLAZURECONNSTR_SqlServer`
+- Azure Key Vault secrets via `Azure__KeyVault__VaultUri`
+
+### Key Vault secret naming
+Use `--` in secret names where configuration uses `:`.
+
+Examples:
+- `ConnectionStrings--SqlServer`
+- `Jwt--Secret`
+- `Jwt--Issuer`
+- `Jwt--Audience`
+- `Seed--DefaultUserPassword`
+
+### Managed identity
+For Azure deployment, use managed identity instead of client secrets.
+
+- system-assigned identity:
+  - set `Azure__KeyVault__VaultUri`
+  - grant the app access to Key Vault secrets
+- user-assigned identity:
+  - also set `Azure__ManagedIdentityClientId`
+
+### Recommended production settings
+- `ASPNETCORE_ENVIRONMENT=Production`
+- `Database__ApplyMigrationsOnStartup=false`
+- `Seed__Enabled=false`
+
+### Recommended Azure App Service settings
+- `Jwt__Issuer`
+- `Jwt__Audience`
+- `Jwt__TokenLifetimeMinutes`
+- `Jwt__RefreshTokenLifetimeDays`
+- `Cors__AllowedOrigins__0`
+- `Azure__KeyVault__VaultUri`
+
+Keep actual secrets in Key Vault or App Service settings, not in tracked files.
 
 ## Logging
 - Serilog console logging
