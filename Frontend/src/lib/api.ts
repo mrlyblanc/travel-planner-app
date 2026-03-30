@@ -16,6 +16,14 @@ const DEFAULT_LOGIN_PASSWORD = import.meta.env.VITE_DEV_LOGIN_PASSWORD ?? '';
 const AUTH_STORAGE_KEY = 'travel-planner-auth-session';
 
 const normalizeBaseUrl = (value: string) => value.replace(/\/$/, '');
+const isLocalUrl = (value: string) => {
+  try {
+    const parsed = new URL(value);
+    return ['localhost', '127.0.0.1'].includes(parsed.hostname);
+  } catch {
+    return false;
+  }
+};
 
 const isLocalBrowserHost = () => {
   if (typeof window === 'undefined') {
@@ -26,10 +34,11 @@ const isLocalBrowserHost = () => {
 };
 
 const CONFIGURED_API_BASE_URL = ENV_API_BASE_URL ? normalizeBaseUrl(ENV_API_BASE_URL) : null;
+const SHOULD_INCLUDE_LOCAL_FALLBACKS = isLocalBrowserHost() && (!CONFIGURED_API_BASE_URL || isLocalUrl(CONFIGURED_API_BASE_URL));
 
 const API_BASE_URL_CANDIDATES = [
   ...(CONFIGURED_API_BASE_URL ? [CONFIGURED_API_BASE_URL] : []),
-  ...(!CONFIGURED_API_BASE_URL && isLocalBrowserHost() ? LOCAL_API_BASE_URLS.map(normalizeBaseUrl) : []),
+  ...(SHOULD_INCLUDE_LOCAL_FALLBACKS ? LOCAL_API_BASE_URLS.map(normalizeBaseUrl) : []),
 ].filter((value, index, values) => values.indexOf(value) === index);
 
 let resolvedApiBaseUrl = API_BASE_URL_CANDIDATES[0] ?? '';
