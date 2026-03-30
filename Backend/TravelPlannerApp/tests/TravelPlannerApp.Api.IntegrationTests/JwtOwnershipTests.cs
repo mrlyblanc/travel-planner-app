@@ -101,7 +101,7 @@ public sealed class JwtOwnershipTests
     [Fact]
     public async Task SwaggerJson_ForSecuredEndpoints_IncludesBearerSecurityRequirement()
     {
-        using var factory = new TravelPlannerApiFactory();
+        using var factory = new TravelPlannerApiFactory("Development");
         using var client = factory.CreateApiClient();
 
         var response = await client.GetAsync("/swagger/v1/swagger.json");

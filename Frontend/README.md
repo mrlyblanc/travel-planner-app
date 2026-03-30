@@ -4,10 +4,11 @@ This frontend is ready to deploy to Azure Static Web Apps.
 
 ## What is already configured
 
-- React Router deep links are handled by [`public/staticwebapp.config.json`](./public/staticwebapp.config.json), so routes like `/login`, `/register`, and `/itineraries/:id` refresh correctly in Azure.
+- React Router deep links and security headers are generated into `dist/staticwebapp.config.json` during the Vite build, so routes like `/login`, `/register`, and `/itineraries/:id` refresh correctly in Azure.
 - Node is pinned in [`package.json`](./package.json) so Azure uses a Vite-compatible runtime during CI builds.
 - The API client in [`src/lib/api.ts`](./src/lib/api.ts) only falls back to localhost when the app is running on localhost. Production builds now require a real `VITE_API_BASE_URL`.
 - GitHub Actions deployment is defined in [`../.github/workflows/travel-planner-frontend-swa.yml`](../.github/workflows/travel-planner-frontend-swa.yml).
+- A centralized Content Security Policy is generated from [`config/csp.ts`](./config/csp.ts), and defaults to `Content-Security-Policy-Report-Only` until you switch it to enforced mode.
 
 ## Recommended Azure target
 
@@ -67,6 +68,8 @@ Add these **repository variables**:
 
 - `VITE_API_BASE_URL`: your deployed backend base URL, for example `https://your-api.azurewebsites.net`
 - `VITE_API_VERSION`: `1.0`
+- `VITE_CSP_MODE`: `report-only` to start safely, then `enforce` once you are comfortable with the reports
+- `VITE_CSP_REPORT_URI`: optional override for CSP reporting. If omitted, the build uses `<VITE_API_BASE_URL>/security/csp-reports` when `VITE_API_BASE_URL` is set.
 
 Important:
 
@@ -128,7 +131,11 @@ Because Vite replaces `VITE_*` values at build time, fix the GitHub variable and
 
 ### Refreshing a deep link gives a 404
 
-Confirm [`public/staticwebapp.config.json`](./public/staticwebapp.config.json) is present and gets copied into `dist` during the build.
+Confirm `dist/staticwebapp.config.json` was generated during the build.
+
+### You are ready to enforce CSP after running report-only
+
+Set `VITE_CSP_MODE=enforce` in your deployment environment and redeploy. The same centralized policy will then ship as `Content-Security-Policy` instead of `Content-Security-Policy-Report-Only`.
 
 ### Geoapify search does not work in production
 

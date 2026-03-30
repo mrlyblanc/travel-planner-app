@@ -15,7 +15,7 @@ public sealed class TransportSecurityTests
 
         var response = await client.GetAsync("/");
 
-        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.True(response.Headers.Contains("Strict-Transport-Security"));
     }
 
@@ -43,7 +43,11 @@ public sealed class TransportSecurityTests
         using var client = factory.CreateApiClient("http://travelplannerapp.test");
         client.DefaultRequestHeaders.TryAddWithoutValidation("X-Forwarded-Proto", "https");
 
-        var response = await client.GetAsync("/swagger/v1/swagger.json");
+        var response = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
+        {
+            Email = "ava.santos@globejet.com",
+            Password = TravelPlannerApiFactory.SeedPassword
+        });
 
         response.EnsureSuccessStatusCode();
         Assert.True(response.Headers.Contains("Strict-Transport-Security"));

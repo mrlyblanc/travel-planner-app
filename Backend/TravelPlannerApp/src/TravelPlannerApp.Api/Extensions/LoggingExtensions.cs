@@ -7,25 +7,24 @@ public static class LoggingExtensions
 {
     public static WebApplicationBuilder AddAppLogging(this WebApplicationBuilder builder)
     {
+        var baseLoggerConfiguration = new LoggerConfiguration()
+            .Enrich.FromLogContext()
+            .WriteTo.Console();
+
         if (builder.Environment.IsEnvironment("Testing"))
         {
-            Log.Logger = new LoggerConfiguration()
+            Log.Logger = baseLoggerConfiguration
                 .MinimumLevel.Warning()
-                .Enrich.FromLogContext()
-                .WriteTo.Console()
                 .CreateLogger();
-
             builder.Host.UseSerilog(Log.Logger, dispose: true);
             return builder;
         }
 
-        Log.Logger = new LoggerConfiguration()
+        Log.Logger = baseLoggerConfiguration
             .MinimumLevel.Information()
             .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
             .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
-            .Enrich.FromLogContext()
-            .WriteTo.Console()
-            .CreateBootstrapLogger();
+            .CreateLogger();
 
         builder.Host.UseSerilog((context, services, loggerConfiguration) =>
         {

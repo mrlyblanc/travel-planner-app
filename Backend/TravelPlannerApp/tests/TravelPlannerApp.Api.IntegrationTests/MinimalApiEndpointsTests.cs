@@ -280,13 +280,40 @@ public sealed class MinimalApiEndpointsTests
     [Fact]
     public async Task Root_ReturnsSwaggerRedirect()
     {
-        using var factory = new TravelPlannerApiFactory();
+        using var factory = new TravelPlannerApiFactory("Development");
         using var client = factory.CreateApiClient();
 
         var response = await client.GetAsync("/");
 
         Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
         Assert.Equal("/swagger", response.Headers.Location?.OriginalString);
+    }
+
+    [Fact]
+    public async Task Root_OutsideDevelopment_ReturnsApiInfo()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = factory.CreateApiClient();
+
+        var response = await client.GetAsync("/");
+
+        response.EnsureSuccessStatusCode();
+        var payload = await response.Content.ReadAsStringAsync();
+        Assert.Contains("TravelPlannerApp API", payload, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CspReportEndpoint_AcceptsAnonymousReports()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = factory.CreateApiClient();
+
+        using var content = new StringContent("{\"csp-report\":{\"violated-directive\":\"script-src\"}}");
+        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/csp-report");
+
+        var response = await client.PostAsync("/security/csp-reports", content);
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
     }
 
     [Fact]
@@ -310,7 +337,7 @@ public sealed class MinimalApiEndpointsTests
     [Fact]
     public async Task SwaggerJson_IncludesApiVersionIfMatchAndBearerSecurityScheme()
     {
-        using var factory = new TravelPlannerApiFactory();
+        using var factory = new TravelPlannerApiFactory("Development");
         using var client = factory.CreateApiClient();
 
         var response = await client.GetAsync("/swagger/v1/swagger.json");
@@ -321,6 +348,17 @@ public sealed class MinimalApiEndpointsTests
         Assert.Contains("If-Match", payload, StringComparison.Ordinal);
         Assert.Contains("Bearer", payload, StringComparison.Ordinal);
         Assert.DoesNotContain("X-User-Id", payload, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SwaggerJson_OutsideDevelopment_ReturnsNotFound()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = factory.CreateApiClient();
+
+        var response = await client.GetAsync("/swagger/v1/swagger.json");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]

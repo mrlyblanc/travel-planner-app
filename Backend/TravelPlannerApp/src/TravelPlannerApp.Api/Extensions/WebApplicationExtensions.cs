@@ -40,8 +40,12 @@ public static class WebApplicationExtensions
             };
         });
         app.UseMiddleware<AppExceptionMiddleware>();
-        app.UseSwagger();
-        app.UseSwaggerUI();
+        if (app.Environment.IsDevelopment())
+        {
+            app.UseSwagger();
+            app.UseSwaggerUI();
+        }
+
         app.UseCors(ServiceCollectionExtensions.CorsPolicyName);
         app.UseRateLimiter();
         app.UseAuthentication();
@@ -51,7 +55,16 @@ public static class WebApplicationExtensions
 
     public static WebApplication MapApi(this WebApplication app)
     {
-        app.MapGet("/", static () => Results.Redirect("/swagger"));
+        if (app.Environment.IsDevelopment())
+        {
+            app.MapGet("/", static () => Results.Redirect("/swagger"));
+        }
+        else
+        {
+            app.MapGet("/", static () => Results.Ok(new { name = "TravelPlannerApp API" }));
+        }
+
+        app.MapSecurityEndpoints();
 
         var apiVersionSet = app.NewApiVersionSet()
             .HasApiVersion(new ApiVersion(1, 0))
