@@ -59,6 +59,8 @@ Configuration precedence is now Azure-friendly:
 
 The API also applies migrations on startup for a fresh SQL Server database. Older dev databases without migration history are patched for compatibility and baselined on startup.
 
+Local development still supports HTTP to keep the dev loop practical. Production does not.
+
 ## Required .env Keys
 - `ConnectionStrings__SqlServer`
 - `Jwt__Issuer`
@@ -199,6 +201,13 @@ For Azure deployment, use managed identity instead of client secrets.
 - `ASPNETCORE_ENVIRONMENT=Production`
 - `Database__ApplyMigrationsOnStartup=false`
 - `Seed__Enabled=false`
+- `TransportSecurity__EnforceHttpsInProduction=true`
+
+### Production transport security
+- the app trusts `X-Forwarded-Proto` from the reverse proxy
+- the app sends HSTS on HTTPS responses in production
+- the app rejects non-HTTPS production requests instead of serving API traffic over HTTP
+- for Azure App Service, set platform `HTTPS Only` to `On`
 
 ### Recommended Azure App Service settings
 - `Jwt__Issuer`
@@ -209,6 +218,7 @@ For Azure deployment, use managed identity instead of client secrets.
 - `RateLimiting__Auth__Refresh__PermitLimit`
 - `RateLimiting__Auth__Mutation__PermitLimit`
 - `Cors__AllowedOrigins__0`
+- `TransportSecurity__EnforceHttpsInProduction`
 - `Azure__KeyVault__VaultUri`
 
 Keep actual secrets in Key Vault or App Service settings, not in tracked files.
@@ -280,6 +290,18 @@ Tuning keys:
 - `RateLimiting__Auth__Refresh__WindowSeconds`
 - `RateLimiting__Auth__Mutation__PermitLimit`
 - `RateLimiting__Auth__Mutation__WindowSeconds`
+
+## Transport Security
+- development: HTTP and HTTPS are both available
+- production: HTTPS only
+- forwarded proxy headers are honored for scheme detection
+- HSTS is enabled in production
+
+Tuning keys:
+- `TransportSecurity__EnforceHttpsInProduction`
+- `TransportSecurity__Hsts__MaxAgeDays`
+- `TransportSecurity__Hsts__IncludeSubDomains`
+- `TransportSecurity__Hsts__Preload`
 
 ## SignalR
 Hub route:

@@ -13,6 +13,7 @@ public static class WebApplicationExtensions
 {
     public static WebApplication UseApiDefaults(this WebApplication app)
     {
+        app.UseTransportSecurity();
         app.UseSerilogRequestLogging(options =>
         {
             options.GetLevel = static (httpContext, _, exception) =>
@@ -42,7 +43,6 @@ public static class WebApplicationExtensions
         app.UseSwagger();
         app.UseSwaggerUI();
         app.UseCors(ServiceCollectionExtensions.CorsPolicyName);
-        app.UseHttpsRedirection();
         app.UseRateLimiter();
         app.UseAuthentication();
         app.UseAuthorization();

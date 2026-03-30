@@ -16,10 +16,16 @@ namespace TravelPlannerApp.Api.IntegrationTests.Support;
 public sealed class TravelPlannerApiFactory : WebApplicationFactory<Program>
 {
     public const string SeedPassword = "Travel123!";
+    private readonly string _environmentName;
+
+    public TravelPlannerApiFactory(string environmentName = "Testing")
+    {
+        _environmentName = environmentName;
+    }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Testing");
+        builder.UseEnvironment(_environmentName);
         builder.ConfigureAppConfiguration((_, configurationBuilder) =>
         {
             configurationBuilder.AddInMemoryCollection(new Dictionary<string, string?>
@@ -31,7 +37,11 @@ public sealed class TravelPlannerApiFactory : WebApplicationFactory<Program>
                 ["Jwt:TokenLifetimeMinutes"] = "120",
                 ["Jwt:RefreshTokenLifetimeDays"] = "14",
                 ["Seed:Enabled"] = "true",
-                ["Seed:DefaultUserPassword"] = SeedPassword
+                ["Seed:DefaultUserPassword"] = SeedPassword,
+                ["TransportSecurity:EnforceHttpsInProduction"] = "true",
+                ["TransportSecurity:Hsts:MaxAgeDays"] = "365",
+                ["TransportSecurity:Hsts:IncludeSubDomains"] = "false",
+                ["TransportSecurity:Hsts:Preload"] = "false"
             });
         });
         builder.ConfigureServices(services =>
@@ -53,18 +63,18 @@ public sealed class TravelPlannerApiFactory : WebApplicationFactory<Program>
         });
     }
 
-    public HttpClient CreateApiClient()
+    public HttpClient CreateApiClient(string baseAddress = "https://localhost")
     {
         return CreateClient(new WebApplicationFactoryClientOptions
         {
             AllowAutoRedirect = false,
-            BaseAddress = new Uri("https://localhost")
+            BaseAddress = new Uri(baseAddress)
         });
     }
 
-    public async Task<HttpClient> CreateAuthenticatedClientAsync(string email)
+    public async Task<HttpClient> CreateAuthenticatedClientAsync(string email, string baseAddress = "https://localhost")
     {
-        var client = CreateApiClient();
+        var client = CreateApiClient(baseAddress);
         var response = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
         {
             Email = email,
