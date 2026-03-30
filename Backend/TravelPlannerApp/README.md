@@ -204,6 +204,53 @@ For Azure deployment, use managed identity instead of client secrets.
 
 Keep actual secrets in Key Vault or App Service settings, not in tracked files.
 
+## GitHub Actions CI/CD
+A GitHub Actions workflow is included at [travel-planner-api.yml](C:\Users\User\Documents\Projects\travel-planner-app\.github\workflows\travel-planner-api.yml).
+
+What it does:
+- build the backend solution
+- run unit and integration tests
+- publish the API artifact
+- deploy the published artifact to Azure App Service
+
+Trigger behavior:
+- push to `main` for backend changes
+- pull requests to `main` for backend changes
+- manual `workflow_dispatch`
+
+Authentication model:
+- OpenID Connect to Azure App Service
+- no publish profile required
+- recommended by Azure over long-lived deployment secrets
+
+Required GitHub repository secrets:
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
+
+Required GitHub repository variables:
+- `AZURE_WEBAPP_NAME`
+
+Optional GitHub repository variables:
+- `AZURE_WEBAPP_SLOT`
+
+### OIDC setup
+1. Create or choose an Azure service principal for GitHub Actions deployment.
+2. Add a federated credential for your GitHub repository and branch.
+3. Grant that identity access to the App Service.
+
+Minimum practical role:
+- `Website Contributor` scoped to the target App Service
+
+### Deployment notes
+- The workflow deploys only the app artifact.
+- It does not run EF Core migrations against production.
+- Keep production app settings as:
+  - `Database__ApplyMigrationsOnStartup=false`
+  - `Seed__Enabled=false`
+
+If you want database migrations in CI/CD, add a separate controlled step with explicit approval or a separate migration workflow.
+
 ## Logging
 - Serilog console logging
 - Rolling file logs under `logs/`

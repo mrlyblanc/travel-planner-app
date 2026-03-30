@@ -3,9 +3,9 @@ import type { EventAuditLog, EventAuditSnapshot, EventCategory, ItineraryEvent }
 import type { Itinerary, ItineraryMember } from '../types/itinerary';
 import type { User } from '../types/user';
 
-const API_VERSION = import.meta.env.VITE_API_VERSION ?? '1.0';
+const API_VERSION = import.meta.env.VITE_API_VERSION?.trim() || '1.0';
 const ENV_API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim();
-const FALLBACK_API_BASE_URLS = [
+const LOCAL_API_BASE_URLS = [
   'http://localhost:5290',
   'https://localhost:7051',
   'http://localhost:5070',
@@ -17,12 +17,22 @@ const AUTH_STORAGE_KEY = 'travel-planner-auth-session';
 
 const normalizeBaseUrl = (value: string) => value.replace(/\/$/, '');
 
+const isLocalBrowserHost = () => {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return ['localhost', '127.0.0.1'].includes(window.location.hostname);
+};
+
+const CONFIGURED_API_BASE_URL = ENV_API_BASE_URL ? normalizeBaseUrl(ENV_API_BASE_URL) : null;
+
 const API_BASE_URL_CANDIDATES = [
-  ...(ENV_API_BASE_URL ? [normalizeBaseUrl(ENV_API_BASE_URL)] : []),
-  ...FALLBACK_API_BASE_URLS.map(normalizeBaseUrl),
+  ...(CONFIGURED_API_BASE_URL ? [CONFIGURED_API_BASE_URL] : []),
+  ...(!CONFIGURED_API_BASE_URL && isLocalBrowserHost() ? LOCAL_API_BASE_URLS.map(normalizeBaseUrl) : []),
 ].filter((value, index, values) => values.indexOf(value) === index);
 
-let resolvedApiBaseUrl = API_BASE_URL_CANDIDATES[0] ?? 'http://localhost:5290';
+let resolvedApiBaseUrl = API_BASE_URL_CANDIDATES[0] ?? '';
 
 interface ApiProblemDetails {
   title?: string;
@@ -273,13 +283,17 @@ async function apiRequest<T>(
   }
 
   if (!response) {
-    const configuredBase = ENV_API_BASE_URL ? normalizeBaseUrl(ENV_API_BASE_URL) : null;
-    const triedBases = configuredBase
-      ? [configuredBase]
-      : API_BASE_URL_CANDIDATES;
+    const configuredBase = CONFIGURED_API_BASE_URL;
+    const triedBases = configuredBase ? [configuredBase] : API_BASE_URL_CANDIDATES;
+    const triedBasesMessage = triedBases.length > 0
+      ? `Tried ${triedBases.join(', ')}.`
+      : 'No API base URL is configured for this build.';
+    const deploymentHint = !configuredBase && !isLocalBrowserHost()
+      ? ' Set VITE_API_BASE_URL to your deployed backend URL before building the frontend.'
+      : '';
 
     throw new ApiError(
-      `Unable to reach the backend API. Tried ${triedBases.join(', ')}. Make sure the backend is running and that VITE_API_BASE_URL points to the correct host and port.`,
+      `Unable to reach the backend API. ${triedBasesMessage} Make sure the backend is running and that VITE_API_BASE_URL points to the correct host and port.${deploymentHint}`,
       0,
     );
   }

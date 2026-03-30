@@ -1,0 +1,86 @@
+name: Travel Planner Frontend
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "Frontend/**"
+      - ".github/workflows/travel-planner-frontend-swa.yml"
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened, closed]
+    paths:
+      - "Frontend/**"
+      - ".github/workflows/travel-planner-frontend-swa.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: travel-planner-frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build_and_deploy:
+    name: Build and Deploy Frontend
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.action != 'closed')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+      VITE_API_VERSION: ${{ vars.VITE_API_VERSION }}
+      VITE_GEOAPIFY_API_KEY: ${{ secrets.VITE_GEOAPIFY_API_KEY }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Validate deployment configuration
+        env:
+          AZURE_STATIC_WEB_APPS_API_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_TRIP_BOARD }}
+        run: |
+          missing=0
+
+          if [ -z "$AZURE_STATIC_WEB_APPS_API_TOKEN" ]; then
+            echo "Missing GitHub repository secret: AZURE_STATIC_WEB_APPS_API_TOKEN_TRIP_BOARD" >&2
+            missing=1
+          fi
+
+          if [ -z "$VITE_API_BASE_URL" ]; then
+            echo "Missing GitHub repository variable: VITE_API_BASE_URL" >&2
+            missing=1
+          fi
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Build and deploy to Azure Static Web Apps
+        id: builddeploy
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_TRIP_BOARD }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: "upload"
+          app_location: "Frontend"
+          api_location: ""
+          output_location: "dist"
+          app_build_command: "npm run build"
+
+  close_pull_request:
+    name: Close Pull Request Preview
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Close Pull Request
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_TRIP_BOARD }}
+          action: "close"
