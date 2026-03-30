@@ -79,6 +79,12 @@ Optional for Azure:
 ## Authentication
 The API uses JWT bearer authentication.
 
+Auth rate limiting is enabled on:
+- `POST /api/auth/login`
+- `POST /api/auth/refresh`
+- `POST /api/auth/logout`
+- `POST /api/auth/change-password`
+
 Login example:
 ```bash
 curl -X POST http://localhost:5070/api/auth/login ^
@@ -101,15 +107,15 @@ The API uses resource ownership for write access.
 Ownership rules:
 - user profile updates: only the profile owner
 - itinerary updates: only the itinerary creator
-- itinerary member replacement: only the itinerary creator
-- event updates and deletes: only the event creator
+- itinerary member replacement and removal: only the itinerary creator
+- event deletes: the event creator or the itinerary creator
 
 General access rules:
 - authenticated users can search users
 - itinerary and event reads require itinerary membership
 - itinerary members can create events
 - itinerary members can read shared itinerary events
-- only the event creator can update or delete that event
+- itinerary members can update shared itinerary events
 
 ## API Versioning
 - Header-based versioning
@@ -199,6 +205,9 @@ For Azure deployment, use managed identity instead of client secrets.
 - `Jwt__Audience`
 - `Jwt__TokenLifetimeMinutes`
 - `Jwt__RefreshTokenLifetimeDays`
+- `RateLimiting__Auth__Login__PermitLimit`
+- `RateLimiting__Auth__Refresh__PermitLimit`
+- `RateLimiting__Auth__Mutation__PermitLimit`
 - `Cors__AllowedOrigins__0`
 - `Azure__KeyVault__VaultUri`
 
@@ -255,6 +264,22 @@ If you want database migrations in CI/CD, add a separate controlled step with ex
 - Serilog console logging
 - Rolling file logs under `logs/`
 - Request logging enabled for API traffic
+
+## Rate Limiting
+Built-in ASP.NET Core rate limiting protects the auth endpoints.
+
+Default limits:
+- login: `5` requests per `60` seconds per client
+- refresh: `10` requests per `60` seconds per client
+- logout and change-password: `10` requests per `300` seconds per client or authenticated user
+
+Tuning keys:
+- `RateLimiting__Auth__Login__PermitLimit`
+- `RateLimiting__Auth__Login__WindowSeconds`
+- `RateLimiting__Auth__Refresh__PermitLimit`
+- `RateLimiting__Auth__Refresh__WindowSeconds`
+- `RateLimiting__Auth__Mutation__PermitLimit`
+- `RateLimiting__Auth__Mutation__WindowSeconds`
 
 ## SignalR
 Hub route:

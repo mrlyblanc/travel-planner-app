@@ -59,6 +59,32 @@ public sealed class MinimalApiEndpointsTests
     }
 
     [Fact]
+    public async Task Login_WhenRateLimitExceeded_ReturnsTooManyRequests()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = factory.CreateApiClient();
+
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            var response = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
+            {
+                Email = AvaEmail,
+                Password = "wrong-password"
+            }, JsonOptions);
+
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+
+        var limitedResponse = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
+        {
+            Email = AvaEmail,
+            Password = "wrong-password"
+        }, JsonOptions);
+
+        Assert.Equal((HttpStatusCode)429, limitedResponse.StatusCode);
+    }
+
+    [Fact]
     public async Task Refresh_WithValidRefreshToken_ReturnsRotatedTokens()
     {
         using var factory = new TravelPlannerApiFactory();
@@ -110,6 +136,30 @@ public sealed class MinimalApiEndpointsTests
         var secondRefreshResponse = await replayClient.PostAsync("/api/auth/refresh", content: null);
 
         Assert.Equal(HttpStatusCode.Unauthorized, secondRefreshResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task Refresh_WhenRateLimitExceeded_ReturnsTooManyRequests()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = factory.CreateApiClient();
+
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            var response = await client.PostAsJsonAsync("/api/auth/refresh", new RefreshTokenRequest
+            {
+                RefreshToken = "invalid-refresh-token"
+            }, JsonOptions);
+
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+
+        var limitedResponse = await client.PostAsJsonAsync("/api/auth/refresh", new RefreshTokenRequest
+        {
+            RefreshToken = "invalid-refresh-token"
+        }, JsonOptions);
+
+        Assert.Equal((HttpStatusCode)429, limitedResponse.StatusCode);
     }
 
     [Fact]

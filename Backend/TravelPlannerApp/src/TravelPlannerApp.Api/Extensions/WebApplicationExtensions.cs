@@ -43,6 +43,7 @@ public static class WebApplicationExtensions
         app.UseSwaggerUI();
         app.UseCors(ServiceCollectionExtensions.CorsPolicyName);
         app.UseHttpsRedirection();
+        app.UseRateLimiter();
         app.UseAuthentication();
         app.UseAuthorization();
         return app;

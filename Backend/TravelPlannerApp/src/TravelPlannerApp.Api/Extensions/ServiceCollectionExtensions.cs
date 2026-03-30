@@ -33,6 +33,7 @@ public static class ServiceCollectionExtensions
         services.ConfigureHttpJsonOptions(static options => ConfigureJson(options.SerializerOptions));
         services.AddSignalR().AddJsonProtocol(static options => ConfigureJson(options.PayloadSerializerOptions));
         services.AddSingleton(jwtOptions);
+        services.AddApiRateLimiting(configuration);
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
             {

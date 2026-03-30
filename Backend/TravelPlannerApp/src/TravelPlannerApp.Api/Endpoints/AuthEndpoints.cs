@@ -1,9 +1,11 @@
 using TravelPlannerApp.Api.Common.Authorization;
+using TravelPlannerApp.Api.Common.RateLimiting;
 using TravelPlannerApp.Api.Extensions;
 using TravelPlannerApp.Application.Common.Exceptions;
 using TravelPlannerApp.Application.Contracts.Auth;
 using TravelPlannerApp.Application.Services;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace TravelPlannerApp.Api.Endpoints;
 
@@ -23,6 +25,7 @@ public static class AuthEndpoints
             return TypedResults.Ok(ToSessionResponse(auth));
         })
             .AllowAnonymous()
+            .RequireRateLimiting(ApiRateLimitPolicyNames.AuthLogin)
             .Validate<LoginRequest>()
             .WithSummary("Login and get a JWT");
 
@@ -39,6 +42,7 @@ public static class AuthEndpoints
             return TypedResults.Ok(ToSessionResponse(auth));
         })
             .AllowAnonymous()
+            .RequireRateLimiting(ApiRateLimitPolicyNames.AuthRefresh)
             .WithSummary("Refresh access and refresh tokens");
 
         group.MapPost("/logout", async (RefreshTokenRequest? request, HttpContext httpContext, IAuthService service, CancellationToken cancellationToken) =>
@@ -58,6 +62,7 @@ public static class AuthEndpoints
             return TypedResults.NoContent();
         })
             .AllowAnonymous()
+            .RequireRateLimiting(ApiRateLimitPolicyNames.AuthMutation)
             .WithSummary("Revoke a refresh token");
 
         group.MapPost("/change-password", async (ChangePasswordRequest request, IAuthService service, CancellationToken cancellationToken) =>
@@ -66,6 +71,7 @@ public static class AuthEndpoints
             return TypedResults.NoContent();
         })
             .RequireAuthorization(AuthorizationPolicies.AuthenticatedUser)
+            .RequireRateLimiting(ApiRateLimitPolicyNames.AuthMutation)
             .Validate<ChangePasswordRequest>()
             .WithSummary("Change the authenticated user's password");
 
