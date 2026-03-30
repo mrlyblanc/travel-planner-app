@@ -13,7 +13,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Itinerary } from '../../types/itinerary';
 import type { User } from '../../types/user';
 
@@ -35,7 +35,10 @@ export const ShareItineraryDialog = ({
   onSubmit,
 }: ShareItineraryDialogProps) => {
   const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
+  const [searchInput, setSearchInput] = useState('');
   const [searchResults, setSearchResults] = useState<User[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const searchRequestId = useRef(0);
 
   const existingMembers = useMemo(
     () => users.filter((user) => itinerary.memberIds.includes(user.id)),
@@ -47,9 +50,16 @@ export const ShareItineraryDialog = ({
   );
 
   useEffect(() => {
+    if (!open) {
+      return;
+    }
+
     setSelectedUsers([]);
+    setSearchInput('');
     setSearchResults(availableUsers);
-  }, [availableUsers, open, itinerary.id]);
+    setIsSearching(false);
+    searchRequestId.current += 1;
+  }, [itinerary.id, open]);
 
   return (
     <Dialog fullWidth maxWidth="sm" onClose={onClose} open={open}>
@@ -73,23 +83,64 @@ export const ShareItineraryDialog = ({
           </Box>
 
           <Autocomplete
+            disableCloseOnSelect
+            filterOptions={(options) => options}
+            filterSelectedOptions
+            inputValue={searchInput}
+            isOptionEqualToValue={(option, value) => option.id === value.id}
+            loading={isSearching}
+            loadingText="Searching travelers..."
             multiple
             getOptionLabel={(option) => `${option.name} (${option.email})`}
-            onChange={(_, value) => setSelectedUsers(value)}
+            noOptionsText={searchInput.trim().length < 2 ? 'Type at least 2 characters' : 'No matching travelers'}
+            onChange={(_, value, reason) => {
+              setSelectedUsers(value);
+
+              if (reason === 'selectOption' || reason === 'clear') {
+                setSearchInput('');
+                setSearchResults(availableUsers);
+                setIsSearching(false);
+                searchRequestId.current += 1;
+              }
+            }}
             onInputChange={(_, value, reason) => {
               if (reason === 'reset') {
                 return;
               }
 
+              setSearchInput(value);
               const trimmedValue = value.trim();
               if (trimmedValue.length < 2) {
                 setSearchResults(availableUsers);
+                setIsSearching(false);
+                searchRequestId.current += 1;
                 return;
               }
 
-              void onSearchUsers(trimmedValue).then((results) => {
-                setSearchResults(results.filter((user) => !itinerary.memberIds.includes(user.id)));
-              });
+              const requestId = searchRequestId.current + 1;
+              searchRequestId.current = requestId;
+              setIsSearching(true);
+
+              void onSearchUsers(trimmedValue)
+                .then((results) => {
+                  if (searchRequestId.current !== requestId) {
+                    return;
+                  }
+
+                  setSearchResults(results.filter((user) => !itinerary.memberIds.includes(user.id)));
+                })
+                .catch(() => {
+                  if (searchRequestId.current !== requestId) {
+                    return;
+                  }
+
+                  setSearchResults([]);
+                })
+                .finally(() => {
+                  if (searchRequestId.current === requestId) {
+                    setIsSearching(false);
+                  }
+                });
             }}
             options={searchResults}
             renderInput={(params) => (
