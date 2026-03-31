@@ -9,11 +9,12 @@ import { UserAvatarGroup } from '../user/UserAvatarGroup';
 interface ItineraryCardProps {
   itinerary: Itinerary;
   collaborators: User[];
-  eventCount: number;
+  collaboratorCount: number;
+  eventCountLabel: string;
   totalCostLabel: string;
 }
 
-export const ItineraryCard = ({ itinerary, collaborators, eventCount, totalCostLabel }: ItineraryCardProps) => (
+export const ItineraryCard = ({ itinerary, collaborators, collaboratorCount, eventCountLabel, totalCostLabel }: ItineraryCardProps) => (
   <Card sx={{ height: '100%' }}>
     <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.2, height: '100%' }}>
       <Stack direction="row" justifyContent="space-between" spacing={2}>
@@ -41,14 +42,14 @@ export const ItineraryCard = ({ itinerary, collaborators, eventCount, totalCostL
           variant="outlined"
         />
         <Chip icon={<Coins size={14} />} label={totalCostLabel} variant="outlined" />
-        <Chip label={`${eventCount} events`} variant="outlined" />
+        <Chip label={eventCountLabel} variant="outlined" />
       </Stack>
 
       <Stack direction="row" justifyContent="space-between" mt="auto" pt={1}>
         <Typography color="text.secondary" variant="body2">
-          {collaborators.length === 0
+          {collaboratorCount === 0
             ? 'Just you for now'
-            : `Shared with ${collaborators.length} traveler${collaborators.length === 1 ? '' : 's'}`}
+            : `Shared with ${collaboratorCount} traveler${collaboratorCount === 1 ? '' : 's'}`}
         </Typography>
         <Button component={RouterLink} endIcon={<ArrowRight size={16} />} to={`/itineraries/${itinerary.id}`}>
           Open trip

@@ -3,23 +3,35 @@ import { Box, Card, CardContent, Stack, Typography } from '@mui/material';
 
 interface StatCardProps {
   label: string;
-  value: string;
+  value: ReactNode;
+  valueMeta?: ReactNode;
   helper: string;
   icon: ReactNode;
 }
 
-export const StatCard = ({ label, value, helper, icon }: StatCardProps) => (
-  <Card>
-    <CardContent>
-      <Stack direction="row" justifyContent="space-between" spacing={2}>
-        <Box>
+export const StatCard = ({ label, value, valueMeta, helper, icon }: StatCardProps) => (
+  <Card sx={{ height: '100%', minHeight: 192 }}>
+    <CardContent sx={{ height: '100%' }}>
+      <Stack direction="row" justifyContent="space-between" spacing={2} sx={{ height: '100%' }}>
+        <Box sx={{ minWidth: 0, flex: 1, display: 'flex', flexDirection: 'column' }}>
           <Typography color="text.secondary" variant="body2">
             {label}
           </Typography>
-          <Typography mt={1} variant="h5">
-            {value}
-          </Typography>
-          <Typography color="text.secondary" mt={1} variant="body2">
+          {typeof value === 'string' || typeof value === 'number' ? (
+            <Typography mt={1} variant="h5">
+              {value}
+            </Typography>
+          ) : (
+            <Box mt={1}>{value}</Box>
+          )}
+          <Box sx={{ minHeight: 44, mt: 0.6 }}>
+            {valueMeta ? (
+              <Typography color="text.secondary" variant="body2">
+                {valueMeta}
+              </Typography>
+            ) : null}
+          </Box>
+          <Typography color="text.secondary" mt="auto" variant="body2">
             {helper}
           </Typography>
         </Box>

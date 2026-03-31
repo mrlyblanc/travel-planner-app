@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using TravelPlannerApp.Api.Common.Authorization;
+using TravelPlannerApp.Api.Common.RateLimiting;
 using TravelPlannerApp.Api.Extensions;
 using TravelPlannerApp.Application.Abstractions.Persistence;
 using TravelPlannerApp.Application.Contracts.Itineraries;
@@ -70,6 +71,7 @@ public static class ItineraryEndpoints
             httpContext.Response.SetETag(response.Version);
             return Results.Ok(response);
         })
+            .RequireRateLimiting(ApiRateLimitPolicyNames.ItineraryShareCodeRotate)
             .RequireIfMatchHeader()
             .WithSummary("Rotate itinerary share code");
 

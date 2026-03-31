@@ -315,11 +315,19 @@ export const EventDrawer = ({
   });
 
   const locationAddress = watch('locationAddress');
-  const [startDateValue, startTimeValue, endDateValue, endTimeValue, selectedCurrencyCode] = useWatch({
+  const [selectedCategoryValue, selectedColorValue, startDateValue, startTimeValue, endDateValue, endTimeValue, selectedCurrencyCode] = useWatch({
     control,
-    name: ['startDate', 'startTime', 'endDate', 'endTime', 'currencyCode'],
+    name: ['category', 'color', 'startDate', 'startTime', 'endDate', 'endTime', 'currencyCode'],
   });
   const selectedCurrencyOption = useMemo(() => getCurrencyOption(selectedCurrencyCode), [selectedCurrencyCode]);
+  const headerChipCategory = useMemo(() => {
+    return selectedCategoryValue && eventCategoryOptions.includes(selectedCategoryValue as EventCategory)
+      ? (selectedCategoryValue as EventCategory)
+      : null;
+  }, [selectedCategoryValue]);
+  const headerChipColor = useMemo(() => {
+    return selectedColorValue ? normalizeEventColor(selectedColorValue) : undefined;
+  }, [selectedColorValue]);
   const hasEventBeenUpdated = useMemo(() => {
     if (!event) {
       return false;
@@ -425,7 +433,7 @@ export const EventDrawer = ({
                 {itinerary.title} • {itinerary.destination}
               </Typography>
             </Box>
-            {event ? <EventCategoryChip category={event.category} /> : null}
+            {headerChipCategory ? <EventCategoryChip category={headerChipCategory} color={headerChipColor} /> : null}
           </Stack>
 
           {!canManage ? (

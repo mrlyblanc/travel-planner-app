@@ -20,7 +20,7 @@ import {
   useMediaQuery,
   useTheme,
 } from '@mui/material';
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { alpha } from '@mui/material/styles';
 import { useToast } from '../../app/providers/ToastProvider';
@@ -30,10 +30,12 @@ import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { ApiError } from '../../lib/api';
 import { fromNow } from '../../lib/date';
 import type { UserNotification } from '../../types/notification';
-import { ChangePasswordDialog } from '../auth/ChangePasswordDialog';
 import { SidebarContent } from './SidebarContent';
 
 const drawerWidth = 320;
+const ChangePasswordDialog = lazy(() =>
+  import('../auth/ChangePasswordDialog').then((module) => ({ default: module.ChangePasswordDialog })),
+);
 
 export const AppShell = () => {
   const theme = useTheme();
@@ -538,7 +540,11 @@ export const AppShell = () => {
         <Outlet />
       </Box>
 
-      <ChangePasswordDialog onClose={() => setChangePasswordOpen(false)} open={changePasswordOpen} />
+      {changePasswordOpen ? (
+        <Suspense fallback={null}>
+          <ChangePasswordDialog onClose={() => setChangePasswordOpen(false)} open={changePasswordOpen} />
+        </Suspense>
+      ) : null}
     </Box>
   );
 };

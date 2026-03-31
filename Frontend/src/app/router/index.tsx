@@ -1,10 +1,29 @@
+import { Suspense, lazy, type ReactNode } from 'react';
 import { Navigate, Outlet, createBrowserRouter, useLocation } from 'react-router-dom';
-import { AppShell } from '../../components/layout/AppShell';
+import { RouteLoadingScreen } from '../../components/common/RouteLoadingScreen';
 import { useTravelStore } from '../store/useTravelStore';
-import { ItineraryDetailsPage } from '../../pages/ItineraryDetailsPage';
-import { ItineraryListPage } from '../../pages/ItineraryListPage';
-import { LoginPage } from '../../pages/LoginPage';
-import { RegisterPage } from '../../pages/RegisterPage';
+
+const AppShell = lazy(() =>
+  import('../../components/layout/AppShell').then((module) => ({ default: module.AppShell })),
+);
+const ItineraryDetailsPage = lazy(() =>
+  import('../../pages/ItineraryDetailsPage').then((module) => ({ default: module.ItineraryDetailsPage })),
+);
+const ItineraryListPage = lazy(() =>
+  import('../../pages/ItineraryListPage').then((module) => ({ default: module.ItineraryListPage })),
+);
+const LoginPage = lazy(() =>
+  import('../../pages/LoginPage').then((module) => ({ default: module.LoginPage })),
+);
+const RegisterPage = lazy(() =>
+  import('../../pages/RegisterPage').then((module) => ({ default: module.RegisterPage })),
+);
+
+const withRouteSuspense = (element: ReactNode) => (
+  <Suspense fallback={<RouteLoadingScreen />}>
+    {element}
+  </Suspense>
+);
 
 const RootRedirect = () => {
   const accessToken = useTravelStore((state) => state.accessToken);
@@ -24,7 +43,7 @@ const ProtectedRoute = () => {
     return <Navigate replace state={{ from: location }} to="/login" />;
   }
 
-  return <AppShell />;
+  return withRouteSuspense(<AppShell />);
 };
 
 export const router = createBrowserRouter([
@@ -37,11 +56,11 @@ export const router = createBrowserRouter([
     children: [
       {
         path: '/login',
-        element: <LoginPage />,
+        element: withRouteSuspense(<LoginPage />),
       },
       {
         path: '/register',
-        element: <RegisterPage />,
+        element: withRouteSuspense(<RegisterPage />),
       },
     ],
   },
@@ -51,11 +70,11 @@ export const router = createBrowserRouter([
     children: [
       {
         path: 'itineraries',
-        element: <ItineraryListPage />,
+        element: withRouteSuspense(<ItineraryListPage />),
       },
       {
         path: 'itineraries/:itineraryId',
-        element: <ItineraryDetailsPage />,
+        element: withRouteSuspense(<ItineraryDetailsPage />),
       },
     ],
   },

@@ -13,6 +13,13 @@ export interface CurrencyTotal {
   amount: number;
 }
 
+export interface CurrencySummaryDisplay {
+  primaryLabel: string;
+  secondaryLabels: string[];
+  remainingCount: number;
+  totalCount: number;
+}
+
 const formatterCache = new Map<string, Intl.NumberFormat>();
 
 export const supportedCurrencies = currencyCatalog as CurrencyOption[];
@@ -110,6 +117,47 @@ export const getCostTotalsByCurrency = (events: ItineraryEvent[]) =>
   )
     .map(([currencyCode, amount]) => ({ currencyCode, amount }))
     .sort((left, right) => right.amount - left.amount);
+
+export const getCurrencySummaryDisplay = (
+  totals: CurrencyTotal[],
+  {
+    maxSecondary = 2,
+  }: {
+    maxSecondary?: number;
+  } = {},
+): CurrencySummaryDisplay | null => {
+  if (totals.length === 0) {
+    return null;
+  }
+
+  const [primary, ...secondaryTotals] = totals;
+  const secondaryLabels = secondaryTotals
+    .slice(0, Math.max(0, maxSecondary))
+    .map((total) => formatCurrencyAmount(total.amount, total.currencyCode));
+
+  return {
+    primaryLabel: formatCurrencyAmount(primary.amount, primary.currencyCode),
+    secondaryLabels,
+    remainingCount: Math.max(0, secondaryTotals.length - secondaryLabels.length),
+    totalCount: totals.length,
+  };
+};
+
+export const formatCompactCurrencySummary = (
+  totals: CurrencyTotal[],
+  {
+    emptyLabel = 'No costs yet',
+  }: {
+    emptyLabel?: string;
+  } = {},
+) => {
+  const summary = getCurrencySummaryDisplay(totals, { maxSecondary: 0 });
+  if (!summary) {
+    return emptyLabel;
+  }
+
+  return summary.totalCount > 1 ? `${summary.primaryLabel} +${summary.totalCount - 1}` : summary.primaryLabel;
+};
 
 export const formatCurrencySummary = (
   totals: CurrencyTotal[],

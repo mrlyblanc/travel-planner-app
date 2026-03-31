@@ -193,6 +193,32 @@ public sealed class MinimalApiEndpointsTests
     }
 
     [Fact]
+    public async Task AuthenticatedJsonResponse_WhenClientAcceptsGzip_IsCompressed()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Accept-Encoding", "gzip");
+
+        var response = await client.GetAsync("/api/auth/me", HttpCompletionOption.ResponseHeadersRead);
+
+        response.EnsureSuccessStatusCode();
+        Assert.Contains("gzip", response.Content.Headers.ContentEncoding);
+    }
+
+    [Fact]
+    public async Task SignalRNegotiate_WhenClientAcceptsGzip_IsCompressed()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
+        client.DefaultRequestHeaders.TryAddWithoutValidation("Accept-Encoding", "gzip");
+
+        var response = await client.PostAsync("/hubs/itinerary/negotiate?negotiateVersion=1", content: null);
+
+        response.EnsureSuccessStatusCode();
+        Assert.Contains("gzip", response.Content.Headers.ContentEncoding);
+    }
+
+    [Fact]
     public async Task Logout_WithRefreshToken_RevokesRefreshToken()
     {
         using var factory = new TravelPlannerApiFactory();
@@ -929,6 +955,75 @@ public sealed class MinimalApiEndpointsTests
         var ownerNotifications = await ownerClient.GetFromJsonAsync<List<UserNotificationResponse>>("/api/notifications", JsonOptions);
         Assert.NotNull(ownerNotifications);
         Assert.Contains(ownerNotifications!, notification => notification.Type == "itinerary.member.joined" && notification.ItineraryId == "itinerary-tokyo");
+    }
+
+    [Fact]
+    public async Task RotateShareCode_WhenRateLimitExceeded_ReturnsTooManyRequests()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var ownerClient = await factory.CreateAuthenticatedClientAsync(AvaEmail);
+
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            var etag = await GetEtagAsync(ownerClient, "/api/itineraries/itinerary-tokyo/share-code");
+            var response = await ownerClient.SendAsync(CreateIfMatchRequest(
+                HttpMethod.Post,
+                "/api/itineraries/itinerary-tokyo/share-code/rotate",
+                null,
+                etag));
+
+            Assert.NotEqual((HttpStatusCode)429, response.StatusCode);
+            response.EnsureSuccessStatusCode();
+        }
+
+        var limitedEtag = await GetEtagAsync(ownerClient, "/api/itineraries/itinerary-tokyo/share-code");
+        var limitedResponse = await ownerClient.SendAsync(CreateIfMatchRequest(
+            HttpMethod.Post,
+            "/api/itineraries/itinerary-tokyo/share-code/rotate",
+            null,
+            limitedEtag));
+
+        Assert.Equal((HttpStatusCode)429, limitedResponse.StatusCode);
+    }
+
+    [Fact]
+    public async Task RotateShareCode_WhenOneOwnerHitsLimit_DoesNotBlockAnotherOwner()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var firstClient = await factory.CreateAuthenticatedClientAsync(AvaEmail);
+        using var secondClient = await factory.CreateAuthenticatedClientAsync(LucaEmail);
+
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            var etag = await GetEtagAsync(firstClient, "/api/itineraries/itinerary-tokyo/share-code");
+            var response = await firstClient.SendAsync(CreateIfMatchRequest(
+                HttpMethod.Post,
+                "/api/itineraries/itinerary-tokyo/share-code/rotate",
+                null,
+                etag));
+
+            Assert.NotEqual((HttpStatusCode)429, response.StatusCode);
+            response.EnsureSuccessStatusCode();
+        }
+
+        var limitedEtag = await GetEtagAsync(firstClient, "/api/itineraries/itinerary-tokyo/share-code");
+        var limitedResponse = await firstClient.SendAsync(CreateIfMatchRequest(
+            HttpMethod.Post,
+            "/api/itineraries/itinerary-tokyo/share-code/rotate",
+            null,
+            limitedEtag));
+
+        Assert.Equal((HttpStatusCode)429, limitedResponse.StatusCode);
+
+        var secondUserEtag = await GetEtagAsync(secondClient, "/api/itineraries/itinerary-seoul/share-code");
+        var secondUserResponse = await secondClient.SendAsync(CreateIfMatchRequest(
+            HttpMethod.Post,
+            "/api/itineraries/itinerary-seoul/share-code/rotate",
+            null,
+            secondUserEtag));
+
+        Assert.NotEqual((HttpStatusCode)429, secondUserResponse.StatusCode);
+        secondUserResponse.EnsureSuccessStatusCode();
     }
 
     [Fact]

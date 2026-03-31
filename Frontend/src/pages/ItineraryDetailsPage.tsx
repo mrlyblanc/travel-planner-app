@@ -17,21 +17,33 @@ import {
   Typography,
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
-import FullCalendar from '@fullcalendar/react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type FullCalendar from '@fullcalendar/react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { useToast } from '../app/providers/ToastProvider';
 import { useTravelStore, type EventInput, type ItineraryInput } from '../app/store/useTravelStore';
-import { ItineraryCalendar, type CalendarView } from '../components/calendar/ItineraryCalendar';
+import type { CalendarView } from '../components/calendar/ItineraryCalendar';
 import { CostSummaryCard } from '../components/common/CostSummaryCard';
-import { EventDrawer } from '../components/event/EventDrawer';
+import { RouteLoadingScreen } from '../components/common/RouteLoadingScreen';
 import { EventListPanel } from '../components/event/EventListPanel';
-import { ItineraryFormDialog } from '../components/itinerary/ItineraryFormDialog';
-import { ShareItineraryDialog } from '../components/itinerary/ShareItineraryDialog';
 import { UserAvatarGroup } from '../components/user/UserAvatarGroup';
-import { formatCurrencySummary, getCostTotalsByCurrency } from '../lib/currency';
+import { ApiError } from '../lib/api';
+import { getCostTotalsByCurrency, getCurrencySummaryDisplay } from '../lib/currency';
 import { dayjs, formatDateRange } from '../lib/date';
 import { getItineraryDuration, getUpcomingEvents, getUserMap } from '../lib/travel';
+
+const ItineraryCalendar = lazy(() =>
+  import('../components/calendar/ItineraryCalendar').then((module) => ({ default: module.ItineraryCalendar })),
+);
+const EventDrawer = lazy(() =>
+  import('../components/event/EventDrawer').then((module) => ({ default: module.EventDrawer })),
+);
+const ItineraryFormDialog = lazy(() =>
+  import('../components/itinerary/ItineraryFormDialog').then((module) => ({ default: module.ItineraryFormDialog })),
+);
+const ShareItineraryDialog = lazy(() =>
+  import('../components/itinerary/ShareItineraryDialog').then((module) => ({ default: module.ShareItineraryDialog })),
+);
 
 const viewOptions: Array<{ value: CalendarView; label: string }> = [
   { value: 'timeGridDay', label: 'Day' },
@@ -48,7 +60,11 @@ export const ItineraryDetailsPage = () => {
   const currentUserId = useTravelStore((state) => state.currentUserId);
   const itineraries = useTravelStore((state) => state.itineraries);
   const allEvents = useTravelStore((state) => state.events);
+  const itineraryBundleStatus = useTravelStore((state) =>
+    itineraryId ? state.itineraryBundleStatus[itineraryId] ?? 'idle' : 'idle',
+  );
   const itineraryShareCodes = useTravelStore((state) => state.itineraryShareCodes);
+  const ensureItineraryBundle = useTravelStore((state) => state.ensureItineraryBundle);
   const updateItinerary = useTravelStore((state) => state.updateItinerary);
   const loadItineraryShareCode = useTravelStore((state) => state.loadItineraryShareCode);
   const rotateItineraryShareCode = useTravelStore((state) => state.rotateItineraryShareCode);
@@ -76,14 +92,15 @@ export const ItineraryDetailsPage = () => {
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [draftRange, setDraftRange] = useState<{ start: string; end: string } | null>(null);
   const [isShareCodeLoading, setIsShareCodeLoading] = useState(false);
+  const [bundleLoadError, setBundleLoadError] = useState<string | null>(null);
   const itineraryCreatedAt = itinerary?.createdAt ?? '';
   const itineraryUpdatedAt = itinerary?.updatedAt ?? '';
 
   const sortedEvents = getUpcomingEvents(events);
-  const totalCostLabel = formatCurrencySummary(getCostTotalsByCurrency(events), {
-    emptyLabel: 'No costs yet',
-    maxVisible: 2,
-  });
+  const totalCostSummary = useMemo(
+    () => getCurrencySummaryDisplay(getCostTotalsByCurrency(events), { maxSecondary: 0 }),
+    [events],
+  );
   const canManage = itinerary?.memberIds.includes(currentUserId) ?? false;
   const isOwner = itinerary?.createdBy === currentUserId;
   const selectedEvent = selectedEventId ? events.find((event) => event.id === selectedEventId) ?? null : null;
@@ -115,6 +132,32 @@ export const ItineraryDetailsPage = () => {
 
     return latestActivity ? dayjs(latestActivity).fromNow() : 'No activity yet';
   }, [events, itineraryCreatedAt, itineraryUpdatedAt]);
+
+  useEffect(() => {
+    if (!itineraryId || !itinerary || itineraryBundleStatus === 'loaded') {
+      setBundleLoadError(null);
+      return;
+    }
+
+    if (itineraryBundleStatus === 'loading' || itineraryBundleStatus === 'error') {
+      return;
+    }
+
+    let active = true;
+    setBundleLoadError(null);
+
+    void ensureItineraryBundle(itineraryId).catch((error) => {
+      if (!active) {
+        return;
+      }
+
+      setBundleLoadError(error instanceof Error ? error.message : 'Unable to load this itinerary right now.');
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [ensureItineraryBundle, itinerary, itineraryBundleStatus, itineraryId]);
 
   useEffect(() => {
     if (!itinerary) {
@@ -171,6 +214,10 @@ export const ItineraryDetailsPage = () => {
       await rotateItineraryShareCode(currentItineraryId);
       showToast('Join code regenerated');
     } catch (error) {
+      if (error instanceof ApiError && error.status === 429) {
+        throw error;
+      }
+
       showToast(error instanceof Error ? error.message : 'Unable to regenerate join code.', 'error');
       throw error;
     }
@@ -208,6 +255,41 @@ export const ItineraryDetailsPage = () => {
 
   if (!itinerary) {
     return <Navigate replace to="/itineraries" />;
+  }
+
+  if (itineraryBundleStatus !== 'loaded') {
+    if (itineraryBundleStatus === 'error') {
+      return (
+        <Stack spacing={2.5} sx={{ minHeight: '70vh', justifyContent: 'center', maxWidth: 520 }}>
+          <Alert severity="error">
+            {bundleLoadError ?? 'We couldn’t load the latest collaborators and events for this itinerary.'}
+          </Alert>
+          <Box>
+            <Button
+              onClick={() => {
+                setBundleLoadError(null);
+                void ensureItineraryBundle(itinerary.id).catch((error) => {
+                  setBundleLoadError(
+                    error instanceof Error ? error.message : 'Unable to load this itinerary right now.',
+                  );
+                });
+              }}
+              variant="contained"
+            >
+              Retry loading itinerary
+            </Button>
+          </Box>
+        </Stack>
+      );
+    }
+
+    return (
+      <RouteLoadingScreen
+        description="Pulling the collaborators, events, and trip timeline for this itinerary."
+        minHeight="70vh"
+        title="Loading itinerary"
+      />
+    );
   }
 
   return (
@@ -273,7 +355,15 @@ export const ItineraryDetailsPage = () => {
 
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
                 <Metric label="Events" value={String(events.length)} />
-                <Metric label="Total cost" value={totalCostLabel} />
+                <Metric
+                  detail={
+                    totalCostSummary && totalCostSummary.totalCount > 1
+                      ? `+${totalCostSummary.totalCount - 1} more currenc${totalCostSummary.totalCount - 1 === 1 ? 'y' : 'ies'}`
+                      : undefined
+                  }
+                  label="Total cost"
+                  value={totalCostSummary?.primaryLabel ?? 'No costs yet'}
+                />
                 <Metric label="Last updated" value={latestEventActivityLabel} />
               </Stack>
             </Stack>
@@ -340,25 +430,27 @@ export const ItineraryDetailsPage = () => {
         <Grid size={{ xs: 12, xl: 8 }}>
           <Card>
             <CalendarCardContent>
-              <ItineraryCalendar
-                activeView={activeView}
-                calendarRef={calendarRef}
-                canManage={canManage}
-                events={events}
-                initialDate={itinerary.startDate}
-                onRangeChange={setRangeLabel}
-                onReschedule={(eventId, start, end) => {
-                  void rescheduleEvent(eventId, start, end).then(() => showToast('Event rescheduled'));
-                }}
-                onSelectEvent={(event) => {
-                  setSelectedEventId(event.id);
-                  setDraftRange(null);
-                  setEventDrawerOpen(true);
-                  void loadEventHistory(event.id);
-                }}
-                onSelectSlot={(selection) => openCreateEvent(selection)}
-                onViewChange={setActiveView}
-              />
+              <Suspense fallback={<CalendarSectionFallback />}>
+                <ItineraryCalendar
+                  activeView={activeView}
+                  calendarRef={calendarRef}
+                  canManage={canManage}
+                  events={events}
+                  initialDate={itinerary.startDate}
+                  onRangeChange={setRangeLabel}
+                  onReschedule={(eventId, start, end) => {
+                    void rescheduleEvent(eventId, start, end).then(() => showToast('Event rescheduled'));
+                  }}
+                  onSelectEvent={(event) => {
+                    setSelectedEventId(event.id);
+                    setDraftRange(null);
+                    setEventDrawerOpen(true);
+                    void loadEventHistory(event.id);
+                  }}
+                  onSelectSlot={(selection) => openCreateEvent(selection)}
+                  onViewChange={setActiveView}
+                />
+              </Suspense>
             </CalendarCardContent>
           </Card>
         </Grid>
@@ -381,57 +473,65 @@ export const ItineraryDetailsPage = () => {
         </Grid>
       </Grid>
 
-      <ItineraryFormDialog
-        initialValues={{
-          title: itinerary.title,
-          description: itinerary.description,
-          destination: itinerary.destination,
-          startDate: itinerary.startDate,
-          endDate: itinerary.endDate,
-        }}
-        onClose={() => setEditDialogOpen(false)}
-        onSubmit={async (values: ItineraryInput) => {
-          await updateItinerary(itinerary.id, values);
-          setEditDialogOpen(false);
-          showToast('Itinerary updated');
-        }}
-        open={editDialogOpen}
-        title="Edit itinerary"
-      />
+      <Suspense fallback={null}>
+        {editDialogOpen ? (
+          <ItineraryFormDialog
+            initialValues={{
+              title: itinerary.title,
+              description: itinerary.description,
+              destination: itinerary.destination,
+              startDate: itinerary.startDate,
+              endDate: itinerary.endDate,
+            }}
+            onClose={() => setEditDialogOpen(false)}
+            onSubmit={async (values: ItineraryInput) => {
+              await updateItinerary(itinerary.id, values);
+              setEditDialogOpen(false);
+              showToast('Itinerary updated');
+            }}
+            open={editDialogOpen}
+            title="Edit itinerary"
+          />
+        ) : null}
 
-      <ShareItineraryDialog
-        canManageMembers={isOwner}
-        currentUserId={currentUserId}
-        isShareCodeLoading={isShareCodeLoading}
-        itinerary={itinerary}
-        onClose={() => setShareDialogOpen(false)}
-        onLoadShareCode={handleLoadShareCode}
-        onRemoveMember={handleRemoveMember}
-        onRotateShareCode={handleRotateShareCode}
-        open={shareDialogOpen}
-        shareCode={shareCode}
-        users={users}
-      />
+        {shareDialogOpen ? (
+          <ShareItineraryDialog
+            canManageMembers={isOwner}
+            currentUserId={currentUserId}
+            isShareCodeLoading={isShareCodeLoading}
+            itinerary={itinerary}
+            onClose={() => setShareDialogOpen(false)}
+            onLoadShareCode={handleLoadShareCode}
+            onRemoveMember={handleRemoveMember}
+            onRotateShareCode={handleRotateShareCode}
+            open={shareDialogOpen}
+            shareCode={shareCode}
+            users={users}
+          />
+        ) : null}
 
-      <EventDrawer
-        canManage={canManage}
-        canDelete={canDeleteSelectedEvent}
-        auditHistory={selectedEventHistory}
-        draftRange={draftRange}
-        event={selectedEvent}
-        existingEvents={events}
-        itinerary={itinerary}
-        onLoadHistory={loadEventHistory}
-        onClose={() => {
-          setEventDrawerOpen(false);
-          setSelectedEventId(null);
-          setDraftRange(null);
-        }}
-        onDelete={handleDeleteEvent}
-        onSave={handleEventSave}
-        open={eventDrawerOpen}
-        usersMap={usersMap}
-      />
+        {eventDrawerOpen ? (
+          <EventDrawer
+            canManage={canManage}
+            canDelete={canDeleteSelectedEvent}
+            auditHistory={selectedEventHistory}
+            draftRange={draftRange}
+            event={selectedEvent}
+            existingEvents={events}
+            itinerary={itinerary}
+            onLoadHistory={loadEventHistory}
+            onClose={() => {
+              setEventDrawerOpen(false);
+              setSelectedEventId(null);
+              setDraftRange(null);
+            }}
+            onDelete={handleDeleteEvent}
+            onSave={handleEventSave}
+            open={eventDrawerOpen}
+            usersMap={usersMap}
+          />
+        ) : null}
+      </Suspense>
     </Stack>
   );
 };
@@ -439,18 +539,25 @@ export const ItineraryDetailsPage = () => {
 const Metric = ({
   label,
   value,
+  detail,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
+  detail?: string;
 }) => {
   return (
     <MetricPanel>
       <Typography color="text.secondary" variant="caption">
         {label}
       </Typography>
-      <Typography fontWeight={700} mt={0.5} variant="body1">
+      <Typography fontWeight={700} mt={0.5} sx={{ wordBreak: 'break-word' }} variant="body1">
         {value}
       </Typography>
+      {detail ? (
+        <Typography color="text.secondary" mt={0.45} variant="caption">
+          {detail}
+        </Typography>
+      ) : null}
     </MetricPanel>
   );
 };
@@ -511,3 +618,13 @@ const MetricPanel = styled(Box)(({ theme }) => ({
   border: `1px solid ${theme.app.surfaces.metricBorder}`,
   backdropFilter: 'blur(12px)',
 }));
+
+const CalendarSectionFallback = () => (
+  <Box sx={{ minHeight: 520 }}>
+    <RouteLoadingScreen
+      description="Loading the shared trip calendar and timeline."
+      minHeight="100%"
+      title="Loading calendar"
+    />
+  </Box>
+);

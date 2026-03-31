@@ -32,11 +32,14 @@ export interface ChangePasswordInput {
   confirmNewPassword: string;
 }
 
+type ItineraryBundleStatus = 'idle' | 'loading' | 'loaded' | 'error';
+
 interface TravelState {
   users: User[];
   itineraries: Itinerary[];
   events: ItineraryEvent[];
   itineraryMembers: Record<string, ItineraryMember[]>;
+  itineraryBundleStatus: Record<string, ItineraryBundleStatus>;
   itineraryShareCodes: Record<string, ItineraryShareCode>;
   eventHistory: Record<string, EventAuditLog[]>;
   notifications: UserNotification[];
@@ -53,6 +56,7 @@ interface TravelState {
   changePassword: (input: ChangePasswordInput) => Promise<void>;
   logout: () => Promise<void>;
   refreshAll: () => Promise<void>;
+  ensureItineraryBundle: (itineraryId: string) => Promise<void>;
   refreshItineraryBundle: (itineraryId: string) => Promise<void>;
   searchUsers: (query: string) => Promise<User[]>;
   loadEventHistory: (eventId: string) => Promise<void>;
@@ -78,6 +82,7 @@ const emptyDataState = {
   itineraries: [] as Itinerary[],
   events: [] as ItineraryEvent[],
   itineraryMembers: {} as Record<string, ItineraryMember[]>,
+  itineraryBundleStatus: {} as Record<string, ItineraryBundleStatus>,
   itineraryShareCodes: {} as Record<string, ItineraryShareCode>,
   eventHistory: {} as Record<string, EventAuditLog[]>,
   notifications: [] as UserNotification[],
@@ -116,6 +121,9 @@ const mergeNotifications = (...collections: UserNotification[][]) => {
   return Array.from(lookup.values()).sort((left, right) => dayjs(right.createdAt).valueOf() - dayjs(left.createdAt).valueOf());
 };
 
+const sortItinerariesByStartDate = (itineraries: Itinerary[]) =>
+  [...itineraries].sort((left, right) => left.startDate.localeCompare(right.startDate));
+
 const memberToUser = (member: ItineraryMember): User => ({
   id: member.userId,
   name: member.name,
@@ -125,7 +133,7 @@ const memberToUser = (member: ItineraryMember): User => ({
 
 const upsertItinerary = (itineraries: Itinerary[], nextItinerary: Itinerary) => {
   const existing = itineraries.filter((itinerary) => itinerary.id !== nextItinerary.id);
-  return [...existing, nextItinerary].sort((left, right) => left.startDate.localeCompare(right.startDate));
+  return sortItinerariesByStartDate([...existing, nextItinerary]);
 };
 
 const upsertEvent = (events: ItineraryEvent[], nextEvent: ItineraryEvent) => {
@@ -135,6 +143,24 @@ const upsertEvent = (events: ItineraryEvent[], nextEvent: ItineraryEvent) => {
 
 const updateItineraryVersion = (itineraries: Itinerary[], itineraryId: string, version: string) =>
   itineraries.map((itinerary) => (itinerary.id === itineraryId ? { ...itinerary, version } : itinerary));
+
+const buildShellItinerary = (
+  itineraryDto: Awaited<ReturnType<typeof travelApi.listItineraries>>[number],
+  currentUserId: string,
+  members: ItineraryMember[] = [],
+) => {
+  const itinerary = travelApi.mapItinerary(itineraryDto, members);
+
+  return members.length > 0 || !currentUserId
+    ? itinerary
+    : {
+        ...itinerary,
+        memberIds: [currentUserId],
+      };
+};
+
+const filterRecordByKeys = <T>(record: Record<string, T>, validKeys: Set<string>) =>
+  Object.fromEntries(Object.entries(record).filter(([key]) => validKeys.has(key))) as Record<string, T>;
 
 const syncShareCodeVersions = (shareCodes: Record<string, ItineraryShareCode>, itineraries: Itinerary[]) => {
   const itineraryVersionMap = new Map(itineraries.map((itinerary) => [itinerary.id, itinerary.version]));
@@ -225,62 +251,94 @@ const requireSession = async () => {
   return session;
 };
 
-const fetchBundle = async (accessToken: string) => {
+const fetchWorkspaceShell = async (accessToken: string) => {
   const [currentUser, itineraryDtos, notifications] = await Promise.all([
     travelApi.getCurrentUser(accessToken),
     travelApi.listItineraries(accessToken),
     travelApi.listNotifications(accessToken),
   ]);
 
-  const itineraryMembersEntries = await Promise.all(
-    itineraryDtos.map(async (itineraryDto) => {
-      const [members, events] = await Promise.all([
-        travelApi.listItineraryMembers(accessToken, itineraryDto.id),
-        travelApi.listEvents(accessToken, itineraryDto.id),
-      ]);
-
-      return {
-        itinerary: travelApi.mapItinerary(itineraryDto, members),
-        members,
-        events,
-      };
-    }),
-  );
-
-  const itineraryMembers = itineraryMembersEntries.reduce<Record<string, ItineraryMember[]>>((accumulator, entry) => {
-    accumulator[entry.itinerary.id] = entry.members;
-    return accumulator;
-  }, {});
-
-  const itineraries = itineraryMembersEntries.map((entry) => entry.itinerary);
-  const events = itineraryMembersEntries.flatMap((entry) => entry.events);
-  const users = mergeUsers([currentUser], itineraryMembersEntries.flatMap((entry) => entry.members.map(memberToUser)));
-
   return {
     currentUser,
-    users,
-    itineraries,
-    itineraryMembers,
-    events,
+    itineraryDtos,
     notifications,
   };
 };
 
-const buildAuthenticatedState = (session: AuthSession, bundle: Awaited<ReturnType<typeof fetchBundle>>) => ({
-  users: bundle.users,
-  itineraries: bundle.itineraries,
-  events: bundle.events,
-  itineraryMembers: bundle.itineraryMembers,
+const buildAuthenticatedState = (session: AuthSession, shell: Awaited<ReturnType<typeof fetchWorkspaceShell>>) => ({
+  users: [shell.currentUser],
+  itineraries: sortItinerariesByStartDate(
+    shell.itineraryDtos.map((itineraryDto) => buildShellItinerary(itineraryDto, shell.currentUser.id)),
+  ),
+  events: [],
+  itineraryMembers: {},
+  itineraryBundleStatus: Object.fromEntries(
+    shell.itineraryDtos.map((itineraryDto) => [itineraryDto.id, 'idle' as ItineraryBundleStatus]),
+  ),
   itineraryShareCodes: {},
   eventHistory: {},
-  notifications: bundle.notifications,
-  currentUserId: bundle.currentUser.id,
+  notifications: shell.notifications,
+  currentUserId: shell.currentUser.id,
   accessToken: session.accessToken,
   pendingMutationCount: 0,
   isBootstrapping: false,
   isReady: true,
   error: null,
 });
+
+const mergeWorkspaceShellIntoState = (
+  state: Pick<
+    TravelState,
+    | 'users'
+    | 'itineraries'
+    | 'events'
+    | 'itineraryMembers'
+    | 'itineraryBundleStatus'
+    | 'itineraryShareCodes'
+    | 'eventHistory'
+    | 'notifications'
+  >,
+  shell: Awaited<ReturnType<typeof fetchWorkspaceShell>>,
+  accessToken: string,
+) => {
+  const validItineraryIds = new Set(shell.itineraryDtos.map((itineraryDto) => itineraryDto.id));
+  const nextItineraryMembers = filterRecordByKeys(state.itineraryMembers, validItineraryIds);
+  const nextItineraryBundleStatus = filterRecordByKeys(state.itineraryBundleStatus, validItineraryIds);
+  const nextEvents = state.events.filter((event) => validItineraryIds.has(event.itineraryId));
+  const validEventIds = new Set(nextEvents.map((event) => event.id));
+  const nextEventHistory = filterRecordByKeys(state.eventHistory, validEventIds);
+  const nextItineraryShareCodes = filterRecordByKeys(state.itineraryShareCodes, validItineraryIds);
+  const itineraries = sortItinerariesByStartDate(
+    shell.itineraryDtos.map((itineraryDto) => {
+      const members =
+        nextItineraryBundleStatus[itineraryDto.id] === 'loaded' ? nextItineraryMembers[itineraryDto.id] ?? [] : [];
+
+      return buildShellItinerary(itineraryDto, shell.currentUser.id, members);
+    }),
+  );
+
+  shell.itineraryDtos.forEach((itineraryDto) => {
+    if (!nextItineraryBundleStatus[itineraryDto.id]) {
+      nextItineraryBundleStatus[itineraryDto.id] = 'idle';
+    }
+  });
+
+  return {
+    users: mergeUsers(state.users, [shell.currentUser], Object.values(nextItineraryMembers).flat().map(memberToUser)),
+    itineraries,
+    events: nextEvents,
+    itineraryMembers: nextItineraryMembers,
+    itineraryBundleStatus: nextItineraryBundleStatus,
+    itineraryShareCodes: syncShareCodeVersions(nextItineraryShareCodes, itineraries),
+    eventHistory: nextEventHistory,
+    notifications: mergeNotifications(state.notifications, shell.notifications),
+    currentUserId: shell.currentUser.id,
+    accessToken,
+    error: null,
+  };
+};
+
+const itineraryBundleRequests = new Map<string, Promise<void>>();
 
 export const useTravelStore = create<TravelState>((set, get) => {
   const beginMutation = () => {
@@ -303,6 +361,78 @@ export const useTravelStore = create<TravelState>((set, get) => {
     } finally {
       endMutation();
     }
+  };
+
+  const loadItineraryBundle = async (itineraryId: string, force = false) => {
+    const state = get();
+    const currentStatus = state.itineraryBundleStatus[itineraryId];
+
+    if (!force && currentStatus === 'loaded') {
+      return;
+    }
+
+    const existingRequest = itineraryBundleRequests.get(itineraryId);
+    if (existingRequest) {
+      return existingRequest;
+    }
+
+    set((currentState) => ({
+      itineraryBundleStatus: {
+        ...currentState.itineraryBundleStatus,
+        [itineraryId]: 'loading',
+      },
+    }));
+
+    const request = (async () => {
+      try {
+        const session = await requireSession();
+        const [itineraryDto, members, events] = await Promise.all([
+          travelApi.getItinerary(session.accessToken, itineraryId),
+          travelApi.listItineraryMembers(session.accessToken, itineraryId),
+          travelApi.listEvents(session.accessToken, itineraryId),
+        ]);
+
+        const itinerary = travelApi.mapItinerary(itineraryDto, members);
+
+        set((currentState) => ({
+          users: mergeUsers(currentState.users, members.map(memberToUser)),
+          itineraries: upsertItinerary(currentState.itineraries, itinerary),
+          itineraryMembers: {
+            ...currentState.itineraryMembers,
+            [itineraryId]: members,
+          },
+          itineraryBundleStatus: {
+            ...currentState.itineraryBundleStatus,
+            [itineraryId]: 'loaded',
+          },
+          itineraryShareCodes: currentState.itineraryShareCodes[itineraryId]
+            ? {
+                ...currentState.itineraryShareCodes,
+                [itineraryId]: {
+                  ...currentState.itineraryShareCodes[itineraryId],
+                  version: itinerary.version,
+                },
+              }
+            : currentState.itineraryShareCodes,
+          events: [...currentState.events.filter((event) => event.itineraryId !== itineraryId), ...events],
+          accessToken: session.accessToken,
+          error: null,
+        }));
+      } catch (error) {
+        set((currentState) => ({
+          itineraryBundleStatus: {
+            ...currentState.itineraryBundleStatus,
+            [itineraryId]: 'error',
+          },
+        }));
+        throw error;
+      } finally {
+        itineraryBundleRequests.delete(itineraryId);
+      }
+    })();
+
+    itineraryBundleRequests.set(itineraryId, request);
+    return request;
   };
 
   return ({
@@ -334,8 +464,8 @@ export const useTravelStore = create<TravelState>((set, get) => {
         return;
       }
 
-      const bundle = await fetchBundle(session.accessToken);
-      set(buildAuthenticatedState(session, bundle));
+      const shell = await fetchWorkspaceShell(session.accessToken);
+      set(buildAuthenticatedState(session, shell));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to connect to the TravelPlannerApp backend.';
       set({
@@ -352,8 +482,8 @@ export const useTravelStore = create<TravelState>((set, get) => {
 
     try {
       const session = await travelApi.login({ email, password });
-      const bundle = await fetchBundle(session.accessToken);
-      set(buildAuthenticatedState(session, bundle));
+      const shell = await fetchWorkspaceShell(session.accessToken);
+      set(buildAuthenticatedState(session, shell));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to sign in.';
       set({
@@ -382,8 +512,8 @@ export const useTravelStore = create<TravelState>((set, get) => {
         password: input.password,
       });
 
-      const bundle = await fetchBundle(session.accessToken);
-      set(buildAuthenticatedState(session, bundle));
+      const shell = await fetchWorkspaceShell(session.accessToken);
+      set(buildAuthenticatedState(session, shell));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to create your account.';
       set({
@@ -422,6 +552,7 @@ export const useTravelStore = create<TravelState>((set, get) => {
     }
 
     authSessionCache.clear();
+    itineraryBundleRequests.clear();
 
     await itineraryRealtimeClient.disconnect();
 
@@ -435,51 +566,17 @@ export const useTravelStore = create<TravelState>((set, get) => {
 
   refreshAll: async () => {
     const session = await requireSession();
-    const bundle = await fetchBundle(session.accessToken);
+    const shell = await fetchWorkspaceShell(session.accessToken);
 
-    set((state) => ({
-      users: mergeUsers(state.users, bundle.users),
-      itineraries: bundle.itineraries,
-      itineraryMembers: bundle.itineraryMembers,
-      itineraryShareCodes: syncShareCodeVersions(state.itineraryShareCodes, bundle.itineraries),
-      events: bundle.events,
-      notifications: mergeNotifications(state.notifications, bundle.notifications),
-      currentUserId: bundle.currentUser.id,
-      accessToken: session.accessToken,
-      error: null,
-    }));
+    set((state) => mergeWorkspaceShellIntoState(state, shell, session.accessToken));
+  },
+
+  ensureItineraryBundle: async (itineraryId) => {
+    await loadItineraryBundle(itineraryId);
   },
 
   refreshItineraryBundle: async (itineraryId) => {
-    const session = await requireSession();
-    const [itineraryDto, members, events] = await Promise.all([
-      travelApi.getItinerary(session.accessToken, itineraryId),
-      travelApi.listItineraryMembers(session.accessToken, itineraryId),
-      travelApi.listEvents(session.accessToken, itineraryId),
-    ]);
-
-    const itinerary = travelApi.mapItinerary(itineraryDto, members);
-
-    set((state) => ({
-      users: mergeUsers(state.users, members.map(memberToUser)),
-      itineraries: upsertItinerary(state.itineraries, itinerary),
-      itineraryMembers: {
-        ...state.itineraryMembers,
-        [itineraryId]: members,
-      },
-      itineraryShareCodes: state.itineraryShareCodes[itineraryId]
-        ? {
-            ...state.itineraryShareCodes,
-            [itineraryId]: {
-              ...state.itineraryShareCodes[itineraryId],
-              version: itinerary.version,
-            },
-          }
-        : state.itineraryShareCodes,
-      events: [...state.events.filter((event) => event.itineraryId !== itineraryId), ...events],
-      accessToken: session.accessToken,
-      error: null,
-    }));
+    await loadItineraryBundle(itineraryId, true);
   },
 
   searchUsers: async (query) => {
@@ -656,6 +753,10 @@ export const useTravelStore = create<TravelState>((set, get) => {
           ...state.itineraryMembers,
           [itinerary.id]: members,
         },
+        itineraryBundleStatus: {
+          ...state.itineraryBundleStatus,
+          [itinerary.id]: 'loaded',
+        },
         accessToken: session.accessToken,
         currentUserId: currentUser.id,
         error: null,
@@ -728,6 +829,10 @@ export const useTravelStore = create<TravelState>((set, get) => {
         itineraryMembers: {
           ...currentState.itineraryMembers,
           [itineraryId]: replacement.members,
+        },
+        itineraryBundleStatus: {
+          ...currentState.itineraryBundleStatus,
+          [itineraryId]: 'loaded',
         },
         itineraryShareCodes: currentState.itineraryShareCodes[itineraryId]
           ? {

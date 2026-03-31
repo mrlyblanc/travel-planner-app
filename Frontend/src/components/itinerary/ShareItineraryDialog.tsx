@@ -17,6 +17,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useEffect, useMemo, useState } from 'react';
+import { ApiError } from '../../lib/api';
 import type { Itinerary, ItineraryShareCode } from '../../types/itinerary';
 import type { User } from '../../types/user';
 
@@ -51,6 +52,7 @@ export const ShareItineraryDialog = ({
   const [removingUserId, setRemovingUserId] = useState<string | null>(null);
   const [isRotatingCode, setIsRotatingCode] = useState(false);
   const [isCodeCopied, setIsCodeCopied] = useState(false);
+  const [rotateError, setRotateError] = useState<string | null>(null);
 
   const existingMembers = useMemo(
     () => users.filter((user) => itinerary.memberIds.includes(user.id)),
@@ -86,6 +88,7 @@ export const ShareItineraryDialog = ({
       setRemovingUserId(null);
       setIsRotatingCode(false);
       setIsCodeCopied(false);
+      setRotateError(null);
       return;
     }
 
@@ -93,6 +96,7 @@ export const ShareItineraryDialog = ({
     setRemovingUserId(null);
     setIsRotatingCode(false);
     setIsCodeCopied(false);
+    setRotateError(null);
   }, [itinerary.id, open]);
 
   useEffect(() => {
@@ -165,13 +169,16 @@ export const ShareItineraryDialog = ({
   };
 
   const handleRotateShareCode = async () => {
+    setRotateError(null);
     setIsRotatingCode(true);
 
     try {
       await onRotateShareCode();
       setIsCodeCopied(false);
-    } catch {
-      // Errors are surfaced by the shared app error/toast flow.
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 429) {
+        setRotateError('You’ve reached the code regeneration limit. Wait a minute, then try again.');
+      }
     } finally {
       setIsRotatingCode(false);
     }
@@ -271,6 +278,11 @@ export const ShareItineraryDialog = ({
                 <Typography color="text.secondary" variant="body2">
                   Share this 5-digit code with a traveler. They can join the itinerary from the home screen without being searched manually.
                 </Typography>
+                {rotateError ? (
+                  <Alert severity="warning" sx={{ mt: 1.5 }}>
+                    {rotateError}
+                  </Alert>
+                ) : null}
 
                 <Box
                   sx={(theme) => ({

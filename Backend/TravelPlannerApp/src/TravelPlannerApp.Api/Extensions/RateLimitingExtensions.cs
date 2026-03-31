@@ -26,7 +26,7 @@ public static class RateLimitingExtensions
                 await Results.Problem(
                         statusCode: StatusCodes.Status429TooManyRequests,
                         title: "Too Many Requests",
-                        detail: "Too many authentication attempts. Try again later.")
+                        detail: "Too many requests. Try again later.")
                     .ExecuteAsync(context.HttpContext);
             };
 
@@ -52,6 +52,14 @@ public static class RateLimitingExtensions
                     scope: "auth-mutation",
                     permitLimit: GetPositiveInt(configuration, "RateLimiting:Auth:Mutation:PermitLimit", 10),
                     window: TimeSpan.FromSeconds(GetPositiveInt(configuration, "RateLimiting:Auth:Mutation:WindowSeconds", 300)),
+                    preferAuthenticatedUser: true));
+
+            options.AddPolicy(ApiRateLimitPolicyNames.ItineraryShareCodeRotate, context =>
+                CreateFixedWindowPartition(
+                    context,
+                    scope: "itinerary-share-code-rotate",
+                    permitLimit: GetPositiveInt(configuration, "RateLimiting:Itinerary:ShareCodeRotate:PermitLimit", 5),
+                    window: TimeSpan.FromSeconds(GetPositiveInt(configuration, "RateLimiting:Itinerary:ShareCodeRotate:WindowSeconds", 60)),
                     preferAuthenticatedUser: true));
         });
 

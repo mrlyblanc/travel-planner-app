@@ -14,6 +14,7 @@ public static class WebApplicationExtensions
     public static WebApplication UseApiDefaults(this WebApplication app)
     {
         app.UseTransportSecurity();
+        app.UseResponseCompression();
         app.UseSerilogRequestLogging(options =>
         {
             options.GetLevel = static (httpContext, _, exception) =>
@@ -47,8 +48,8 @@ public static class WebApplicationExtensions
         }
 
         app.UseCors(ServiceCollectionExtensions.CorsPolicyName);
-        app.UseRateLimiter();
         app.UseAuthentication();
+        app.UseRateLimiter();
         app.UseAuthorization();
         return app;
     }

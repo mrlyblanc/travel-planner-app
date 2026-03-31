@@ -4,9 +4,11 @@ using System.Text.Json.Serialization;
 using System.Text;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.IO.Compression;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.Net.Http.Headers;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
@@ -31,6 +33,24 @@ public static class ServiceCollectionExtensions
         var jwtOptions = GetJwtOptions(configuration);
 
         services.ConfigureHttpJsonOptions(static options => ConfigureJson(options.SerializerOptions));
+        services.AddResponseCompression(options =>
+        {
+            options.EnableForHttps = true;
+            options.Providers.Add<BrotliCompressionProvider>();
+            options.Providers.Add<GzipCompressionProvider>();
+            options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat([
+                "application/json",
+                "application/problem+json"
+            ]);
+        });
+        services.Configure<BrotliCompressionProviderOptions>(static options =>
+        {
+            options.Level = CompressionLevel.Fastest;
+        });
+        services.Configure<GzipCompressionProviderOptions>(static options =>
+        {
+            options.Level = CompressionLevel.Fastest;
+        });
         services.AddSignalR().AddJsonProtocol(static options => ConfigureJson(options.PayloadSerializerOptions));
         services.AddSingleton(jwtOptions);
         services.AddTransportSecurity(configuration);

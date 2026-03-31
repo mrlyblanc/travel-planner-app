@@ -67,7 +67,18 @@ export const TravelAppBootstrap = ({ children }: PropsWithChildren) => {
             showToast(notification.title, 'info');
 
             if (notification.type === 'itinerary.member.added' || notification.type === 'itinerary.member.removed') {
-              void refreshAll();
+              void refreshAll().then(() => {
+                if (!notification.itineraryId) {
+                  return;
+                }
+
+                const nextState = useTravelStore.getState();
+                if (!nextState.itineraries.some((itinerary) => itinerary.id === notification.itineraryId)) {
+                  return;
+                }
+
+                void refreshItineraryBundle(notification.itineraryId).catch(() => undefined);
+              });
               return;
             }
 
@@ -135,7 +146,7 @@ export const TravelAppBootstrap = ({ children }: PropsWithChildren) => {
               <CircularProgress />
               <Typography variant="h6">Connecting to TravelPlannerApp backend</Typography>
               <Typography color="text.secondary" variant="body2">
-                Restoring your session, then syncing itineraries, members, and events from the backend.
+                Restoring your session and loading your itinerary workspace. Trip details will stream in as you open or browse them.
               </Typography>
             </>
           )}

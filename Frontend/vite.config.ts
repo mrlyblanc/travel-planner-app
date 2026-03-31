@@ -27,6 +27,63 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     plugins: [react(), staticWebAppConfigPlugin(staticWebAppConfig)],
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) {
+              return undefined;
+            }
+
+            if (id.includes('@fullcalendar')) {
+              return 'calendar';
+            }
+
+            if (id.includes('@mui/x-date-pickers')) {
+              return 'pickers';
+            }
+
+            if (
+              id.includes('react-hook-form') ||
+              id.includes('@hookform') ||
+              id.includes('zod')
+            ) {
+              return 'forms';
+            }
+
+            if (id.includes('@microsoft/signalr')) {
+              return 'realtime';
+            }
+
+            if (id.includes('react-router')) {
+              return 'router';
+            }
+
+            if (
+              id.includes('/react/') ||
+              id.includes('/react-dom/') ||
+              id.includes('scheduler')
+            ) {
+              return 'react-core';
+            }
+
+            if (id.includes('dayjs')) {
+              return 'date-utils';
+            }
+
+            if (
+              id.includes('@mui') ||
+              id.includes('@emotion') ||
+              id.includes('@fontsource')
+            ) {
+              return undefined;
+            }
+
+            return 'vendor';
+          },
+        },
+      },
+    },
     server: {
       fs: {
         allow: [path.resolve(process.cwd(), '..')],

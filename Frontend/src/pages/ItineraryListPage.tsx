@@ -1,28 +1,38 @@
-import { Coins, Hash, RefreshCw, Route, Users2 } from 'lucide-react';
+import { Hash, RefreshCw } from 'lucide-react';
 import { alpha, Box, Button, Grid, Stack, Typography } from '@mui/material';
 import { styled } from '@mui/material/styles';
-import { useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../app/providers/ToastProvider';
 import { useTravelStore, type ItineraryInput } from '../app/store/useTravelStore';
-import { StatCard } from '../components/common/StatCard';
 import { ItineraryCard } from '../components/itinerary/ItineraryCard';
-import { JoinItineraryDialog } from '../components/itinerary/JoinItineraryDialog';
-import { formatCurrencySummary, getCostTotalsByCurrency } from '../lib/currency';
-import { ItineraryFormDialog } from '../components/itinerary/ItineraryFormDialog';
+import { formatCompactCurrencySummary, getCostTotalsByCurrency } from '../lib/currency';
 import { formatDateRange } from '../lib/date';
 import { getUserMap } from '../lib/travel';
+
+const ItineraryFormDialog = lazy(() =>
+  import('../components/itinerary/ItineraryFormDialog').then((module) => ({
+    default: module.ItineraryFormDialog,
+  })),
+);
+const JoinItineraryDialog = lazy(() =>
+  import('../components/itinerary/JoinItineraryDialog').then((module) => ({
+    default: module.JoinItineraryDialog,
+  })),
+);
 
 export const ItineraryListPage = () => {
   const navigate = useNavigate();
   const { showToast } = useToast();
   const rawItineraries = useTravelStore((state) => state.itineraries);
   const users = useTravelStore((state) => state.users);
-  const events = useTravelStore((state) => state.events);
   const currentUserId = useTravelStore((state) => state.currentUserId);
+  const events = useTravelStore((state) => state.events);
+  const itineraryBundleStatus = useTravelStore((state) => state.itineraryBundleStatus);
   const createItinerary = useTravelStore((state) => state.createItinerary);
   const joinItineraryByCode = useTravelStore((state) => state.joinItineraryByCode);
   const refreshAll = useTravelStore((state) => state.refreshAll);
+  const ensureItineraryBundle = useTravelStore((state) => state.ensureItineraryBundle);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [joinDialogOpen, setJoinDialogOpen] = useState(false);
   const itineraries = useMemo(
@@ -31,15 +41,46 @@ export const ItineraryListPage = () => {
   );
   const usersMap = useMemo(() => getUserMap(users), [users]);
 
-  const totalCostLabel = useMemo(
-    () =>
-      formatCurrencySummary(getCostTotalsByCurrency(events), {
-        emptyLabel: 'No costs yet',
-        maxVisible: 3,
-      }),
-    [events],
-  );
   const nextTrip = itineraries[0];
+
+  useEffect(() => {
+    const pendingItineraryIds = itineraries
+      .map((itinerary) => itinerary.id)
+      .filter((itineraryId) => itineraryBundleStatus[itineraryId] !== 'loaded');
+
+    if (pendingItineraryIds.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+    const queue = [...pendingItineraryIds];
+    const workerCount = Math.min(2, queue.length);
+
+    const hydrateSummaries = async () => {
+      const workers = Array.from({ length: workerCount }, async () => {
+        while (!cancelled) {
+          const nextItineraryId = queue.shift();
+          if (!nextItineraryId) {
+            return;
+          }
+
+          try {
+            await ensureItineraryBundle(nextItineraryId);
+          } catch {
+            // Keep the list interactive even if one itinerary bundle fails to hydrate.
+          }
+        }
+      });
+
+      await Promise.all(workers);
+    };
+
+    void hydrateSummaries();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ensureItineraryBundle, itineraryBundleStatus, itineraries]);
 
   const handleCreateItinerary = async (values: ItineraryInput) => {
     const itineraryId = await createItinerary(values);
@@ -83,18 +124,6 @@ export const ItineraryListPage = () => {
         </HeroBannerContent>
       </HeroBanner>
 
-      <Grid container spacing={2.5}>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <StatCard helper="Active itineraries across your travel workspace" icon={<Route size={20} />} label="Trips" value={String(itineraries.length)} />
-        </Grid>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <StatCard helper="People available to join and collaborate on trips" icon={<Users2 size={20} />} label="Travelers" value={String(users.length)} />
-        </Grid>
-        <Grid size={{ xs: 12, md: 4 }}>
-          <StatCard helper="Combined planned spend across all itineraries" icon={<Coins size={20} />} label="Total planned cost" value={totalCostLabel} />
-        </Grid>
-      </Grid>
-
       <Box>
         <Typography variant="h5">Your itineraries</Typography>
         <Typography color="text.secondary" mt={0.8}>
@@ -104,50 +133,66 @@ export const ItineraryListPage = () => {
 
       <Grid container spacing={2.5}>
         {itineraries.map((itinerary) => {
-          const itineraryEvents = events.filter((event) => event.itineraryId === itinerary.id);
-          const collaborators = itinerary.memberIds
-            .filter((memberId) => memberId !== currentUserId)
-            .map((memberId) => usersMap[memberId])
-            .filter(Boolean);
+          const isHydrated = itineraryBundleStatus[itinerary.id] === 'loaded';
+          const itineraryEvents = isHydrated ? events.filter((event) => event.itineraryId === itinerary.id) : [];
+          const collaborators = isHydrated
+            ? itinerary.memberIds
+                .filter((memberId) => memberId !== currentUserId)
+                .map((memberId) => usersMap[memberId])
+                .filter(Boolean)
+            : [];
+          const collaboratorCount = Math.max(itinerary.memberCount - 1, 0);
 
           return (
             <Grid key={itinerary.id} size={{ xs: 12, md: 6, xl: 4 }}>
               <ItineraryCard
                 collaborators={collaborators}
-                eventCount={itineraryEvents.length}
+                collaboratorCount={collaboratorCount}
+                eventCountLabel={isHydrated ? `${itineraryEvents.length} events` : 'Syncing…'}
                 itinerary={itinerary}
-                totalCostLabel={formatCurrencySummary(getCostTotalsByCurrency(itineraryEvents), {
-                  emptyLabel: 'No costs yet',
-                  maxVisible: 1,
-                })}
+                totalCostLabel={
+                  isHydrated
+                    ? formatCompactCurrencySummary(getCostTotalsByCurrency(itineraryEvents), {
+                        emptyLabel: 'No costs yet',
+                      })
+                    : 'Syncing…'
+                }
               />
             </Grid>
           );
         })}
       </Grid>
 
-      <ItineraryFormDialog
-        onClose={() => setDialogOpen(false)}
-        onSubmit={handleCreateItinerary}
-        open={dialogOpen}
-        title="Create itinerary"
-      />
+      {dialogOpen ? (
+        <Suspense fallback={null}>
+          <ItineraryFormDialog
+            onClose={() => setDialogOpen(false)}
+            onSubmit={handleCreateItinerary}
+            open={dialogOpen}
+            title="Create itinerary"
+          />
+        </Suspense>
+      ) : null}
 
-      <JoinItineraryDialog
-        onClose={() => setJoinDialogOpen(false)}
-        onSubmit={async (code) => {
-          try {
-            const itineraryId = await joinItineraryByCode(code);
-            setJoinDialogOpen(false);
-            showToast('Joined itinerary');
-            navigate(`/itineraries/${itineraryId}`);
-          } catch (error) {
-            showToast(error instanceof Error ? error.message : 'Unable to join itinerary.', 'error');
-            throw error;
-          }
-        }}
-        open={joinDialogOpen}
-      />
+      {joinDialogOpen ? (
+        <Suspense fallback={null}>
+          <JoinItineraryDialog
+            onClose={() => setJoinDialogOpen(false)}
+            onSubmit={async (code) => {
+              try {
+                const itineraryId = await joinItineraryByCode(code);
+                setJoinDialogOpen(false);
+                showToast('Joined itinerary');
+                navigate(`/itineraries/${itineraryId}`);
+              } catch (error) {
+                showToast(error instanceof Error ? error.message : 'Unable to join itinerary.', 'error');
+                throw error;
+              }
+            }}
+            open={joinDialogOpen}
+          />
+        </Suspense>
+      ) : null}
     </Stack>
   );
 };
