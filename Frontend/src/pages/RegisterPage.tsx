@@ -9,14 +9,15 @@ import { z } from 'zod';
 import { useToast } from '../app/providers/ToastProvider';
 import { useTravelStore } from '../app/store/useTravelStore';
 import { AuthShell } from '../components/auth/AuthShell';
+import { createStrongPasswordSchema, passwordPolicyHelperText } from '../lib/passwordPolicy';
 import { initialsFromName } from '../lib/utils';
 
 const registrationSchema = z
   .object({
     name: z.string().min(2, 'Name must be at least 2 characters').max(120, 'Name is too long'),
     email: z.string().email('Enter a valid email address'),
-    password: z.string().min(8, 'Password must be at least 8 characters').max(200, 'Password is too long'),
-    confirmPassword: z.string().min(8, 'Confirm your password'),
+    password: createStrongPasswordSchema('Password'),
+    confirmPassword: z.string().min(1, 'Confirm your password'),
     avatar: z.string().max(16, 'Avatar must be 16 characters or fewer').optional(),
   })
   .refine((values) => values.password === values.confirmPassword, {
@@ -140,7 +141,7 @@ export const RegisterPage = () => {
           <TextField
             autoComplete="new-password"
             error={Boolean(errors.password)}
-            helperText={errors.password?.message}
+            helperText={errors.password?.message ?? passwordPolicyHelperText}
             label="Password"
             slotProps={{ inputLabel: { shrink: true } }}
             type="password"

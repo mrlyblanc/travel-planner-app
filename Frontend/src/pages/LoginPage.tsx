@@ -10,10 +10,11 @@ import { useToast } from '../app/providers/ToastProvider';
 import { useTravelStore } from '../app/store/useTravelStore';
 import { AuthShell } from '../components/auth/AuthShell';
 import { backendConfig } from '../lib/api';
+import { createExistingPasswordSchema } from '../lib/passwordPolicy';
 
 const loginSchema = z.object({
   email: z.string().email('Enter a valid email address'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
+  password: createExistingPasswordSchema('Password'),
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;

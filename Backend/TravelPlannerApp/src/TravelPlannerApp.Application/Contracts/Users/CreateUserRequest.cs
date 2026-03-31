@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using TravelPlannerApp.Application.Common.Validation;
 
 namespace TravelPlannerApp.Application.Contracts.Users;
 
@@ -14,7 +15,7 @@ public sealed class CreateUserRequest
     public string Email { get; set; } = string.Empty;
 
     [Required]
-    [StringLength(200, MinimumLength = 8)]
+    [PasswordPolicy]
     public string Password { get; set; } = string.Empty;
 
     [StringLength(16)]

@@ -1,15 +1,16 @@
 using System.ComponentModel.DataAnnotations;
+using TravelPlannerApp.Application.Common.Validation;
 
 namespace TravelPlannerApp.Application.Contracts.Auth;
 
 public sealed class ChangePasswordRequest
 {
     [Required]
-    [StringLength(200, MinimumLength = 8)]
+    [StringLength(128, MinimumLength = 8)]
     public string CurrentPassword { get; set; } = string.Empty;
 
     [Required]
-    [StringLength(200, MinimumLength = 8)]
+    [PasswordPolicy]
     public string NewPassword { get; set; } = string.Empty;
 
     [Required]

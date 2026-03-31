@@ -291,6 +291,36 @@ public sealed class MinimalApiEndpointsTests
     }
 
     [Fact]
+    public async Task ChangePassword_WithWeakNewPassword_ReturnsValidationProblem()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = factory.CreateApiClient();
+
+        var loginResponse = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
+        {
+            Email = AvaEmail,
+            Password = TravelPlannerApiFactory.SeedPassword
+        }, JsonOptions);
+        loginResponse.EnsureSuccessStatusCode();
+        var loginPayload = await loginResponse.Content.ReadFromJsonAsync<AuthSessionResponse>(JsonOptions);
+        Assert.NotNull(loginPayload);
+
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", loginPayload!.AccessToken);
+
+        var changePasswordResponse = await client.PostAsJsonAsync("/api/auth/change-password", new ChangePasswordRequest
+        {
+            CurrentPassword = TravelPlannerApiFactory.SeedPassword,
+            NewPassword = "weakpass1!",
+            ConfirmNewPassword = "weakpass1!"
+        }, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, changePasswordResponse.StatusCode);
+        var payload = await changePasswordResponse.Content.ReadFromJsonAsync<ValidationProblemResponse>(JsonOptions);
+        Assert.NotNull(payload);
+        Assert.Contains("newPassword", payload!.Errors.Keys, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task AuthMe_WithBearerToken_ReturnsCurrentUser()
     {
         using var factory = new TravelPlannerApiFactory();
@@ -1141,6 +1171,25 @@ public sealed class MinimalApiEndpointsTests
         }, JsonOptions);
 
         await AssertProblemAsync(response, HttpStatusCode.Conflict, "Conflict");
+    }
+
+    [Fact]
+    public async Task CreateUser_WithWeakPassword_ReturnsValidationProblem()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = factory.CreateApiClient();
+
+        var response = await client.PostAsJsonAsync("/api/users", new CreateUserRequest
+        {
+            Name = "Weak User",
+            Email = "weak.user@example.com",
+            Password = "weakpass1!"
+        }, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var payload = await response.Content.ReadFromJsonAsync<ValidationProblemResponse>(JsonOptions);
+        Assert.NotNull(payload);
+        Assert.Contains("password", payload!.Errors.Keys, StringComparer.OrdinalIgnoreCase);
     }
 
     [Fact]

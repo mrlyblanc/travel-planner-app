@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { useToast } from '../../app/providers/ToastProvider';
 import { useTravelStore } from '../../app/store/useTravelStore';
+import { createExistingPasswordSchema, createStrongPasswordSchema, passwordPolicyHelperText } from '../../lib/passwordPolicy';
 
 interface ChangePasswordDialogProps {
   open: boolean;
@@ -14,9 +15,9 @@ interface ChangePasswordDialogProps {
 
 const changePasswordSchema = z
   .object({
-    currentPassword: z.string().min(8, 'Current password must be at least 8 characters').max(200, 'Password is too long'),
-    newPassword: z.string().min(8, 'New password must be at least 8 characters').max(200, 'Password is too long'),
-    confirmNewPassword: z.string().min(8, 'Confirm your new password'),
+    currentPassword: createExistingPasswordSchema('Current password'),
+    newPassword: createStrongPasswordSchema('New password'),
+    confirmNewPassword: z.string().min(1, 'Confirm your new password'),
   })
   .refine((values) => values.currentPassword !== values.newPassword, {
     message: 'New password must be different from your current password',
@@ -106,7 +107,7 @@ export const ChangePasswordDialog = ({ open, onClose }: ChangePasswordDialogProp
           <TextField
             autoComplete="new-password"
             error={Boolean(errors.newPassword)}
-            helperText={errors.newPassword?.message}
+            helperText={errors.newPassword?.message ?? passwordPolicyHelperText}
             label="New password"
             slotProps={{ inputLabel: { shrink: true } }}
             type="password"
