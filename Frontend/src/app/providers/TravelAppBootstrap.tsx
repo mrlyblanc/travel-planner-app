@@ -1,6 +1,7 @@
 import { Alert, Box, Button, CircularProgress, Stack, Typography } from '@mui/material';
 import { useEffect, useMemo, useRef } from 'react';
 import type { PropsWithChildren } from 'react';
+import { useToast } from './ToastProvider';
 import { useTravelStore } from '../store/useTravelStore';
 import { itineraryRealtimeClient } from '../../lib/realtime';
 
@@ -8,15 +9,21 @@ export const TravelAppBootstrap = ({ children }: PropsWithChildren) => {
   const bootstrap = useTravelStore((state) => state.bootstrap);
   const refreshAll = useTravelStore((state) => state.refreshAll);
   const refreshItineraryBundle = useTravelStore((state) => state.refreshItineraryBundle);
+  const addRealtimeNotification = useTravelStore((state) => state.addRealtimeNotification);
   const accessToken = useTravelStore((state) => state.accessToken);
   const itineraries = useTravelStore((state) => state.itineraries);
   const isBootstrapping = useTravelStore((state) => state.isBootstrapping);
   const isReady = useTravelStore((state) => state.isReady);
   const error = useTravelStore((state) => state.error);
+  const { showToast } = useToast();
   const bootstrappedRef = useRef(false);
+  const itineraryIdsRef = useRef<string[]>([]);
   const itineraryIds = useMemo(() => itineraries.map((itinerary) => itinerary.id), [itineraries]);
-
   const itineraryKey = useMemo(() => itineraryIds.join('|'), [itineraryIds]);
+
+  useEffect(() => {
+    itineraryIdsRef.current = itineraryIds;
+  }, [itineraryIds]);
 
   useEffect(() => {
     if (bootstrappedRef.current) {
@@ -34,30 +41,78 @@ export const TravelAppBootstrap = ({ children }: PropsWithChildren) => {
     }
 
     let active = true;
+    let reconnectTimeoutId: number | null = null;
 
-    void itineraryRealtimeClient
-      .connect(accessToken, (notification) => {
+    const connectRealtime = async () => {
+      try {
+        await itineraryRealtimeClient.connect(accessToken, {
+          onItineraryNotification: (notification) => {
+            if (!active) {
+              return;
+            }
+
+            if (notification.type === 'itinerary.created') {
+              void refreshAll();
+              return;
+            }
+
+            void refreshItineraryBundle(notification.itineraryId);
+          },
+          onUserNotification: (notification) => {
+            if (!active) {
+              return;
+            }
+
+            addRealtimeNotification(notification);
+            showToast(notification.title, 'info');
+
+            if (notification.type === 'itinerary.member.added' || notification.type === 'itinerary.member.removed') {
+              void refreshAll();
+              return;
+            }
+
+            if (notification.itineraryId) {
+              void refreshItineraryBundle(notification.itineraryId);
+            }
+          },
+        });
+
         if (!active) {
           return;
         }
 
-        if (notification.type === 'itinerary.created') {
-          void refreshAll();
+        await itineraryRealtimeClient.syncItineraries(itineraryIdsRef.current);
+      } catch {
+        if (!active) {
           return;
         }
 
-        void refreshItineraryBundle(notification.itineraryId);
-      })
-      .then(() => itineraryRealtimeClient.syncItineraries(itineraryIds))
-      .catch(() => {
-        // Keep the app usable even if realtime fails to connect.
-      });
+        reconnectTimeoutId = window.setTimeout(() => {
+          void connectRealtime();
+        }, 2500);
+      }
+    };
+
+    void connectRealtime();
 
     return () => {
       active = false;
+      if (reconnectTimeoutId) {
+        window.clearTimeout(reconnectTimeoutId);
+      }
       void itineraryRealtimeClient.disconnect();
     };
-  }, [accessToken, isReady, refreshAll, refreshItineraryBundle, itineraryKey, itineraryIds]);
+  }, [accessToken, addRealtimeNotification, isReady, refreshAll, refreshItineraryBundle, showToast]);
+
+  useEffect(() => {
+    if (!accessToken || !isReady) {
+      return;
+    }
+
+    void itineraryRealtimeClient.syncItineraries(itineraryIdsRef.current).catch(() => {
+      // Best effort while the connection is establishing or reconnecting.
+    });
+  }, [accessToken, isReady, itineraryKey]);
 
   if (!isReady) {
     return (

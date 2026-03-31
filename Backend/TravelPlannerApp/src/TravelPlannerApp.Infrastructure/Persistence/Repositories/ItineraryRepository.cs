@@ -40,6 +40,21 @@ public sealed class ItineraryRepository : IItineraryRepository
                 cancellationToken);
     }
 
+    public Task<Itinerary?> GetByShareCodeAsync(string shareCode, CancellationToken cancellationToken = default)
+    {
+        return _dbContext.Itineraries
+            .Include(itinerary => itinerary.Members)
+            .ThenInclude(member => member.User)
+            .FirstOrDefaultAsync(itinerary => itinerary.ShareCode == shareCode, cancellationToken);
+    }
+
+    public Task<bool> ShareCodeExistsAsync(string shareCode, string? excludeItineraryId = null, CancellationToken cancellationToken = default)
+    {
+        return _dbContext.Itineraries.AnyAsync(
+            itinerary => itinerary.ShareCode == shareCode && (excludeItineraryId == null || itinerary.Id != excludeItineraryId),
+            cancellationToken);
+    }
+
     public Task<bool> IsMemberAsync(string itineraryId, string userId, CancellationToken cancellationToken = default)
     {
         return _dbContext.ItineraryMembers

@@ -1,4 +1,4 @@
-import { Coins, RefreshCw, Route, Users2 } from 'lucide-react';
+import { Coins, Hash, RefreshCw, Route, Users2 } from 'lucide-react';
 import { alpha, Box, Button, Grid, Stack, Typography } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { useMemo, useState } from 'react';
@@ -7,6 +7,7 @@ import { useToast } from '../app/providers/ToastProvider';
 import { useTravelStore, type ItineraryInput } from '../app/store/useTravelStore';
 import { StatCard } from '../components/common/StatCard';
 import { ItineraryCard } from '../components/itinerary/ItineraryCard';
+import { JoinItineraryDialog } from '../components/itinerary/JoinItineraryDialog';
 import { formatCurrencySummary, getCostTotalsByCurrency } from '../lib/currency';
 import { ItineraryFormDialog } from '../components/itinerary/ItineraryFormDialog';
 import { formatDateRange } from '../lib/date';
@@ -20,8 +21,10 @@ export const ItineraryListPage = () => {
   const events = useTravelStore((state) => state.events);
   const currentUserId = useTravelStore((state) => state.currentUserId);
   const createItinerary = useTravelStore((state) => state.createItinerary);
+  const joinItineraryByCode = useTravelStore((state) => state.joinItineraryByCode);
   const refreshAll = useTravelStore((state) => state.refreshAll);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [joinDialogOpen, setJoinDialogOpen] = useState(false);
   const itineraries = useMemo(
     () => [...rawItineraries].sort((left, right) => left.startDate.localeCompare(right.startDate)),
     [rawItineraries],
@@ -69,6 +72,9 @@ export const ItineraryListPage = () => {
               startIcon={<RefreshCw size={16} />}
             >
               Sync backend data
+            </HeroGhostButton>
+            <HeroGhostButton onClick={() => setJoinDialogOpen(true)} startIcon={<Hash size={16} />}>
+              Join with code
             </HeroGhostButton>
             <HeroPrimaryButton onClick={() => setDialogOpen(true)} variant="contained">
               Create itinerary
@@ -125,6 +131,22 @@ export const ItineraryListPage = () => {
         onSubmit={handleCreateItinerary}
         open={dialogOpen}
         title="Create itinerary"
+      />
+
+      <JoinItineraryDialog
+        onClose={() => setJoinDialogOpen(false)}
+        onSubmit={async (code) => {
+          try {
+            const itineraryId = await joinItineraryByCode(code);
+            setJoinDialogOpen(false);
+            showToast('Joined itinerary');
+            navigate(`/itineraries/${itineraryId}`);
+          } catch (error) {
+            showToast(error instanceof Error ? error.message : 'Unable to join itinerary.', 'error');
+            throw error;
+          }
+        }}
+        open={joinDialogOpen}
       />
     </Stack>
   );

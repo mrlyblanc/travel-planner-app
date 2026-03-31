@@ -80,6 +80,7 @@ public static class WebApplicationExtensions
         api.MapUserEndpoints();
         api.MapItineraryEndpoints();
         api.MapItineraryMemberEndpoints();
+        api.MapNotificationEndpoints();
         api.MapEventEndpoints();
         api.MapEventHistoryEndpoints();
 

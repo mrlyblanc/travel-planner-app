@@ -11,6 +11,7 @@ public static class DependencyInjection
         services.AddScoped<IUserService, UserService>();
         services.AddScoped<IItineraryService, ItineraryService>();
         services.AddScoped<IEventService, EventService>();
+        services.AddScoped<IUserNotificationService, UserNotificationService>();
         return services;
     }
 }

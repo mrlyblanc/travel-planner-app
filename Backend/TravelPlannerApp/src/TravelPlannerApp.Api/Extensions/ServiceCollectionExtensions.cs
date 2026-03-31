@@ -178,6 +178,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAuthorizationHandler, ItineraryOwnerHandler>();
         services.AddSingleton<IAuthorizationHandler, EventOwnerHandler>();
         services.AddScoped<IItineraryRealtimeNotifier, SignalRItineraryRealtimeNotifier>();
+        services.AddScoped<IUserRealtimeNotifier, SignalRUserRealtimeNotifier>();
 
         return services;
     }

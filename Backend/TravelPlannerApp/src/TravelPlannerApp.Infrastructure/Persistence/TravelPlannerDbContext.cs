@@ -17,6 +17,7 @@ public sealed class TravelPlannerDbContext : DbContext, IUnitOfWork
     public DbSet<ItineraryMember> ItineraryMembers => Set<ItineraryMember>();
     public DbSet<Event> Events => Set<Event>();
     public DbSet<EventAuditLog> EventAuditLogs => Set<EventAuditLog>();
+    public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
@@ -73,6 +74,8 @@ public sealed class TravelPlannerDbContext : DbContext, IUnitOfWork
             entity.Property(itinerary => itinerary.Title).HasMaxLength(160).IsRequired();
             entity.Property(itinerary => itinerary.Description).HasMaxLength(2000);
             entity.Property(itinerary => itinerary.Destination).HasMaxLength(160).IsRequired();
+            entity.Property(itinerary => itinerary.ShareCode).HasMaxLength(5).IsRequired();
+            entity.HasIndex(itinerary => itinerary.ShareCode).IsUnique();
             entity.Property(itinerary => itinerary.StartDate).HasColumnType("date");
             entity.Property(itinerary => itinerary.EndDate).HasColumnType("date");
             entity.HasOne(itinerary => itinerary.CreatedBy)
@@ -155,6 +158,32 @@ public sealed class TravelPlannerDbContext : DbContext, IUnitOfWork
                 .HasForeignKey(log => log.ChangedByUserId)
                 .OnDelete(DeleteBehavior.Restrict);
             entity.Ignore(log => log.Event);
+        });
+
+        modelBuilder.Entity<UserNotification>(entity =>
+        {
+            entity.ToTable("user_notifications");
+            entity.HasKey(notification => notification.Id);
+            entity.Property(notification => notification.Id).HasMaxLength(80);
+            entity.Property(notification => notification.UserId).HasMaxLength(80).IsRequired();
+            entity.Property(notification => notification.Type).HasMaxLength(80).IsRequired();
+            entity.Property(notification => notification.Title).HasMaxLength(160).IsRequired();
+            entity.Property(notification => notification.Message).HasMaxLength(500).IsRequired();
+            entity.Property(notification => notification.ItineraryId).HasMaxLength(80);
+            entity.Property(notification => notification.ActorUserId).HasMaxLength(80);
+            entity.HasIndex(notification => new { notification.UserId, notification.CreatedAtUtc });
+            entity.HasOne(notification => notification.User)
+                .WithMany(user => user.Notifications)
+                .HasForeignKey(notification => notification.UserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(notification => notification.Itinerary)
+                .WithMany()
+                .HasForeignKey(notification => notification.ItineraryId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(notification => notification.ActorUser)
+                .WithMany()
+                .HasForeignKey(notification => notification.ActorUserId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
     }
 }

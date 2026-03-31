@@ -8,6 +8,9 @@ public interface IItineraryService
     Task<ItineraryResponse> GetItineraryByIdAsync(string itineraryId, CancellationToken cancellationToken = default);
     Task<ItineraryResponse> CreateItineraryAsync(CreateItineraryRequest request, CancellationToken cancellationToken = default);
     Task<ItineraryResponse> UpdateItineraryAsync(string itineraryId, string? expectedVersion, UpdateItineraryRequest request, CancellationToken cancellationToken = default);
+    Task<ItineraryShareCodeResponse> GetShareCodeAsync(string itineraryId, CancellationToken cancellationToken = default);
+    Task<ItineraryShareCodeResponse> RotateShareCodeAsync(string itineraryId, string? expectedVersion, CancellationToken cancellationToken = default);
+    Task<ItineraryResponse> JoinByCodeAsync(JoinItineraryByCodeRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ItineraryMemberResponse>> GetMembersAsync(string itineraryId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ItineraryMemberResponse>> ReplaceMembersAsync(string itineraryId, string? expectedVersion, ReplaceItineraryMembersRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ItineraryMemberResponse>> RemoveMemberAsync(string itineraryId, string userId, string? expectedVersion, CancellationToken cancellationToken = default);

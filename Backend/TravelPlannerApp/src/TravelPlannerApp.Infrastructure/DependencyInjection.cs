@@ -32,6 +32,7 @@ public static class DependencyInjection
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
         services.AddScoped<IItineraryRepository, ItineraryRepository>();
         services.AddScoped<IEventRepository, EventRepository>();
+        services.AddScoped<IUserNotificationRepository, UserNotificationRepository>();
         services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
         services.AddSingleton<IRefreshTokenGenerator, RefreshTokenGenerator>();
         services.AddSingleton<IPasswordHasher, AspNetPasswordHasher>();

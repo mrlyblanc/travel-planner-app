@@ -4,6 +4,7 @@ using TravelPlannerApp.Application.Abstractions.Realtime;
 using TravelPlannerApp.Application.Common.Exceptions;
 using TravelPlannerApp.Application.Common.Utilities;
 using TravelPlannerApp.Application.Contracts.Itineraries;
+using TravelPlannerApp.Application.Contracts.Notifications;
 using TravelPlannerApp.Application.Mappings;
 using TravelPlannerApp.Domain.Entities;
 
@@ -14,21 +15,27 @@ public sealed class ItineraryService : IItineraryService
     private readonly ICurrentUserAccessor _currentUserAccessor;
     private readonly IUserRepository _userRepository;
     private readonly IItineraryRepository _itineraryRepository;
+    private readonly IUserNotificationRepository _userNotificationRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IItineraryRealtimeNotifier _notifier;
+    private readonly IUserRealtimeNotifier _userRealtimeNotifier;
 
     public ItineraryService(
         ICurrentUserAccessor currentUserAccessor,
         IUserRepository userRepository,
         IItineraryRepository itineraryRepository,
+        IUserNotificationRepository userNotificationRepository,
         IUnitOfWork unitOfWork,
-        IItineraryRealtimeNotifier notifier)
+        IItineraryRealtimeNotifier notifier,
+        IUserRealtimeNotifier userRealtimeNotifier)
     {
         _currentUserAccessor = currentUserAccessor;
         _userRepository = userRepository;
         _itineraryRepository = itineraryRepository;
+        _userNotificationRepository = userNotificationRepository;
         _unitOfWork = unitOfWork;
         _notifier = notifier;
+        _userRealtimeNotifier = userRealtimeNotifier;
     }
 
     public async Task<IReadOnlyList<ItineraryResponse>> GetAccessibleItinerariesAsync(CancellationToken cancellationToken = default)
@@ -67,6 +74,8 @@ public sealed class ItineraryService : IItineraryService
             Title = request.Title.Trim(),
             Description = request.Description?.Trim(),
             Destination = request.Destination.Trim(),
+            ShareCode = await GenerateUniqueShareCodeAsync(cancellationToken),
+            ShareCodeUpdatedAtUtc = now,
             StartDate = request.StartDate,
             EndDate = request.EndDate,
             CreatedById = currentUser.Id,
@@ -122,6 +131,97 @@ public sealed class ItineraryService : IItineraryService
         return itinerary.ToResponse();
     }
 
+    public async Task<ItineraryShareCodeResponse> GetShareCodeAsync(string itineraryId, CancellationToken cancellationToken = default)
+    {
+        var itinerary = await GetOwnedItineraryAsync(itineraryId, cancellationToken);
+
+        return new ItineraryShareCodeResponse(
+            itinerary.Id,
+            itinerary.ConcurrencyToken,
+            itinerary.ShareCode,
+            itinerary.ShareCodeUpdatedAtUtc);
+    }
+
+    public async Task<ItineraryShareCodeResponse> RotateShareCodeAsync(string itineraryId, string? expectedVersion, CancellationToken cancellationToken = default)
+    {
+        var itinerary = await GetOwnedItineraryAsync(itineraryId, cancellationToken);
+        ConcurrencyTokenHelper.EnsureMatches(itinerary.ConcurrencyToken, expectedVersion);
+
+        itinerary.ShareCode = await GenerateUniqueShareCodeAsync(cancellationToken, itinerary.Id);
+        itinerary.ShareCodeUpdatedAtUtc = DateTime.UtcNow;
+        itinerary.ConcurrencyToken = ConcurrencyTokenHelper.NewToken();
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return new ItineraryShareCodeResponse(
+            itinerary.Id,
+            itinerary.ConcurrencyToken,
+            itinerary.ShareCode,
+            itinerary.ShareCodeUpdatedAtUtc);
+    }
+
+    public async Task<ItineraryResponse> JoinByCodeAsync(JoinItineraryByCodeRequest request, CancellationToken cancellationToken = default)
+    {
+        var currentUser = await GetCurrentUserAsync(cancellationToken);
+        var shareCode = request.Code.Trim();
+        var itinerary = await _itineraryRepository.GetByShareCodeAsync(shareCode, cancellationToken);
+        if (itinerary is null)
+        {
+            throw new BadRequestException("That itinerary code is invalid.");
+        }
+
+        if (itinerary.Members.Any(member => string.Equals(member.UserId, currentUser.Id, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new BadRequestException("You are already part of this itinerary.");
+        }
+
+        var now = DateTime.UtcNow;
+        var newMember = new ItineraryMember
+        {
+            ItineraryId = itinerary.Id,
+            UserId = currentUser.Id,
+            AddedByUserId = itinerary.CreatedById,
+            AddedAtUtc = now,
+            User = currentUser
+        };
+
+        itinerary.Members.Add(newMember);
+        await _itineraryRepository.AddMembersAsync([newMember], cancellationToken);
+
+        itinerary.ConcurrencyToken = ConcurrencyTokenHelper.NewToken();
+        itinerary.UpdatedAtUtc = now;
+
+        var notifications = new List<UserNotification>();
+        if (!string.Equals(itinerary.CreatedById, currentUser.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            notifications.Add(CreateNotification(
+                itinerary.CreatedById,
+                "itinerary.member.joined",
+                "New collaborator joined",
+                $"{currentUser.Name} joined {itinerary.Title}.",
+                itinerary.Id,
+                currentUser.Id,
+                now));
+        }
+
+        notifications.Add(CreateNotification(
+            currentUser.Id,
+            "itinerary.member.added",
+            "You joined an itinerary",
+            $"You joined {itinerary.Title} with a share code.",
+            itinerary.Id,
+            itinerary.CreatedById,
+            now));
+
+        await _userNotificationRepository.AddRangeAsync(notifications, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await NotifyMembershipChangedAsync(itinerary, cancellationToken);
+        await NotifyUsersAsync(notifications, cancellationToken);
+
+        return itinerary.ToResponse();
+    }
+
     public async Task<IReadOnlyList<ItineraryMemberResponse>> GetMembersAsync(string itineraryId, CancellationToken cancellationToken = default)
     {
         var currentUser = await GetCurrentUserAsync(cancellationToken);
@@ -168,6 +268,15 @@ public sealed class ItineraryService : IItineraryService
         }
 
         var currentMemberLookup = itinerary.Members.ToDictionary(static member => member.UserId, StringComparer.OrdinalIgnoreCase);
+        var newMemberUserIds = requestedUserIds
+            .Where(requestedUserId => !currentMemberLookup.ContainsKey(requestedUserId))
+            .ToList();
+
+        if (newMemberUserIds.Count > 0)
+        {
+            throw new BadRequestException("New contributors must join with the itinerary share code.");
+        }
+
         var membersToRemove = itinerary.Members
             .Where(member => !requestedUserIds.Contains(member.UserId, StringComparer.OrdinalIgnoreCase))
             .ToList();
@@ -175,48 +284,13 @@ public sealed class ItineraryService : IItineraryService
         if (membersToRemove.Count > 0)
         {
             _itineraryRepository.RemoveMembers(membersToRemove);
+            itinerary.ConcurrencyToken = ConcurrencyTokenHelper.NewToken();
+            itinerary.UpdatedAtUtc = DateTime.UtcNow;
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await NotifyMembershipChangedAsync(itinerary, cancellationToken);
         }
 
-        var membersToAdd = new List<ItineraryMember>();
-        foreach (var userId in requestedUserIds)
-        {
-            if (currentMemberLookup.ContainsKey(userId))
-            {
-                currentMemberLookup[userId].User ??= userLookup[userId];
-                continue;
-            }
-
-            var member = new ItineraryMember
-            {
-                ItineraryId = itinerary.Id,
-                UserId = userId,
-                AddedByUserId = currentUser.Id,
-                AddedAtUtc = DateTime.UtcNow,
-                User = userLookup[userId],
-                AddedByUser = currentUser
-            };
-
-            itinerary.Members.Add(member);
-            membersToAdd.Add(member);
-        }
-
-        if (membersToAdd.Count > 0)
-        {
-            await _itineraryRepository.AddMembersAsync(membersToAdd, cancellationToken);
-        }
-
-        itinerary.ConcurrencyToken = ConcurrencyTokenHelper.NewToken();
-        itinerary.UpdatedAtUtc = DateTime.UtcNow;
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        var response = await ListMemberResponsesAsync(itinerary.Id, cancellationToken);
-
-        await _notifier.NotifyAsync(
-            itinerary.Id,
-            new ItineraryRealtimeNotification("itinerary.members.updated", itinerary.Id, itinerary.Id, itinerary.UpdatedAtUtc, response),
-            cancellationToken);
-
-        return response;
+        return await ListMemberResponsesAsync(itinerary.Id, cancellationToken);
     }
 
     public async Task<IReadOnlyList<ItineraryMemberResponse>> RemoveMemberAsync(string itineraryId, string userId, string? expectedVersion, CancellationToken cancellationToken = default)
@@ -244,19 +318,31 @@ public sealed class ItineraryService : IItineraryService
             throw new NotFoundException($"Member '{normalizedUserId}' was not found in itinerary '{itineraryId}'.");
         }
 
+        var now = DateTime.UtcNow;
+        var removedUser = memberToRemove.User
+            ?? await _userRepository.GetByIdAsync(normalizedUserId, cancellationToken)
+            ?? throw new NotFoundException($"User '{normalizedUserId}' was not found.");
+
         _itineraryRepository.RemoveMembers([memberToRemove]);
         itinerary.ConcurrencyToken = ConcurrencyTokenHelper.NewToken();
-        itinerary.UpdatedAtUtc = DateTime.UtcNow;
+        itinerary.UpdatedAtUtc = now;
 
+        var notification = CreateNotification(
+            removedUser.Id,
+            "itinerary.member.removed",
+            "Removed from itinerary",
+            $"{currentUser.Name} removed you from {itinerary.Title}.",
+            itinerary.Id,
+            currentUser.Id,
+            now);
+
+        await _userNotificationRepository.AddRangeAsync([notification], cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        var response = await ListMemberResponsesAsync(itinerary.Id, cancellationToken);
-        await _notifier.NotifyAsync(
-            itinerary.Id,
-            new ItineraryRealtimeNotification("itinerary.members.updated", itinerary.Id, itinerary.Id, itinerary.UpdatedAtUtc, response),
-            cancellationToken);
+        await NotifyMembershipChangedAsync(itinerary, cancellationToken);
+        await NotifyUsersAsync([notification], cancellationToken);
 
-        return response;
+        return await ListMemberResponsesAsync(itinerary.Id, cancellationToken);
     }
 
     private async Task<User> GetCurrentUserAsync(CancellationToken cancellationToken)
@@ -274,6 +360,23 @@ public sealed class ItineraryService : IItineraryService
         }
 
         return currentUser;
+    }
+
+    private async Task<Itinerary> GetOwnedItineraryAsync(string itineraryId, CancellationToken cancellationToken)
+    {
+        var currentUser = await GetCurrentUserAsync(cancellationToken);
+        var itinerary = await _itineraryRepository.GetAccessibleByIdAsync(currentUser.Id, itineraryId, cancellationToken);
+        if (itinerary is null)
+        {
+            await ThrowItineraryAccessExceptionAsync(itineraryId, cancellationToken);
+        }
+
+        if (!string.Equals(itinerary!.CreatedById, currentUser.Id, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ForbiddenException($"You do not have access to itinerary '{itineraryId}'.");
+        }
+
+        return itinerary;
     }
 
     private async Task ThrowItineraryAccessExceptionAsync(string itineraryId, CancellationToken cancellationToken)
@@ -295,5 +398,59 @@ public sealed class ItineraryService : IItineraryService
             .ThenBy(static member => member.UserId, StringComparer.OrdinalIgnoreCase)
             .Select(static member => member.ToResponse())
             .ToList();
+    }
+
+    private async Task NotifyMembershipChangedAsync(Itinerary itinerary, CancellationToken cancellationToken)
+    {
+        var response = await ListMemberResponsesAsync(itinerary.Id, cancellationToken);
+        await _notifier.NotifyAsync(
+            itinerary.Id,
+            new ItineraryRealtimeNotification("itinerary.members.updated", itinerary.Id, itinerary.Id, itinerary.UpdatedAtUtc, response),
+            cancellationToken);
+    }
+
+    private async Task NotifyUsersAsync(IEnumerable<UserNotification> notifications, CancellationToken cancellationToken)
+    {
+        foreach (var notification in notifications)
+        {
+            await _userRealtimeNotifier.NotifyUsersAsync([notification.UserId], notification.ToResponse(), cancellationToken);
+        }
+    }
+
+    private static UserNotification CreateNotification(
+        string userId,
+        string type,
+        string title,
+        string message,
+        string? itineraryId,
+        string? actorUserId,
+        DateTime createdAtUtc)
+    {
+        return new UserNotification
+        {
+            Id = IdGenerator.New("notification"),
+            UserId = userId,
+            Type = type,
+            Title = title,
+            Message = message,
+            ItineraryId = itineraryId,
+            ActorUserId = actorUserId,
+            CreatedAtUtc = createdAtUtc
+        };
+    }
+
+    private async Task<string> GenerateUniqueShareCodeAsync(CancellationToken cancellationToken, string? excludeItineraryId = null)
+    {
+        for (var attempt = 0; attempt < 25; attempt++)
+        {
+            var shareCode = ShareCodeGenerator.NewFiveDigitCode();
+            var exists = await _itineraryRepository.ShareCodeExistsAsync(shareCode, excludeItineraryId, cancellationToken);
+            if (!exists)
+            {
+                return shareCode;
+            }
+        }
+
+        throw new InvalidOperationException("Could not generate a unique itinerary share code.");
     }
 }

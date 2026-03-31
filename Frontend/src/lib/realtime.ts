@@ -1,16 +1,26 @@
 import { HubConnection, HubConnectionBuilder, HubConnectionState, LogLevel } from '@microsoft/signalr';
-import { getApiBaseUrl, type ItineraryRealtimeNotification } from './api';
+import {
+  getApiBaseUrl,
+  mapUserRealtimeNotification,
+  type ItineraryRealtimeNotification,
+  type UserRealtimeNotification,
+  type UserRealtimeNotificationDto,
+} from './api';
 
-type NotificationHandler = (notification: ItineraryRealtimeNotification) => void;
+interface RealtimeHandlers {
+  onItineraryNotification: (notification: ItineraryRealtimeNotification) => void;
+  onUserNotification: (notification: UserRealtimeNotification) => void;
+}
 
 class ItineraryRealtimeClient {
   private connection: HubConnection | null = null;
   private token: string | null = null;
-  private handler: NotificationHandler | null = null;
+  private handlers: RealtimeHandlers | null = null;
   private joinedItineraryIds = new Set<string>();
+  private desiredItineraryIds = new Set<string>();
 
-  async connect(token: string, onNotification: NotificationHandler) {
-    this.handler = onNotification;
+  async connect(token: string, handlers: RealtimeHandlers) {
+    this.handlers = handlers;
 
     if (this.connection && this.token === token && this.connection.state === HubConnectionState.Connected) {
       return;
@@ -28,13 +38,25 @@ class ItineraryRealtimeClient {
       .build();
 
     this.connection.on('itineraryUpdated', (notification: ItineraryRealtimeNotification) => {
-      this.handler?.(notification);
+      this.handlers?.onItineraryNotification(notification);
+    });
+
+    this.connection.on('userNotification', (notification: UserRealtimeNotificationDto) => {
+      this.handlers?.onUserNotification(mapUserRealtimeNotification(notification));
+    });
+
+    this.connection.onreconnected(() => this.rejoinDesiredItineraries());
+    this.connection.onclose(() => {
+      this.joinedItineraryIds.clear();
     });
 
     await this.connection.start();
+    await this.rejoinDesiredItineraries();
   }
 
   async syncItineraries(itineraryIds: string[]) {
+    this.desiredItineraryIds = new Set(itineraryIds);
+
     if (!this.connection || this.connection.state !== HubConnectionState.Connected) {
       return;
     }
@@ -71,9 +93,14 @@ class ItineraryRealtimeClient {
       }
 
       this.joinedItineraryIds.clear();
+      this.desiredItineraryIds.clear();
       await this.connection.stop();
       this.connection = null;
     }
+  }
+
+  private async rejoinDesiredItineraries() {
+    await this.syncItineraries(Array.from(this.desiredItineraryIds));
   }
 }
 

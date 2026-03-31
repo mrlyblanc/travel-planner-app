@@ -22,3 +22,10 @@ export interface ItineraryMember {
   addedByUserId: string;
   addedAt: string;
 }
+
+export interface ItineraryShareCode {
+  itineraryId: string;
+  version: string;
+  code: string;
+  updatedAt: string;
+}

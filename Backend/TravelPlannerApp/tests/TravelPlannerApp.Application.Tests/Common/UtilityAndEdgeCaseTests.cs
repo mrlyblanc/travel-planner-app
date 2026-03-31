@@ -118,8 +118,10 @@ public sealed class UtilityAndEdgeCaseTests
             new FakeCurrentUserAccessor { CurrentUserId = ava.Id },
             userRepository,
             itineraryRepository,
+            new FakeUserNotificationRepository(),
             new FakeUnitOfWork(),
-            new FakeRealtimeNotifier());
+            new FakeRealtimeNotifier(),
+            new FakeUserRealtimeNotifier());
 
         var members = await service.GetMembersAsync(itinerary.Id);
 
@@ -136,8 +138,10 @@ public sealed class UtilityAndEdgeCaseTests
             new FakeCurrentUserAccessor { CurrentUserId = ava.Id },
             userRepository,
             new FakeItineraryRepository(),
+            new FakeUserNotificationRepository(),
             new FakeUnitOfWork(),
-            new FakeRealtimeNotifier());
+            new FakeRealtimeNotifier(),
+            new FakeUserRealtimeNotifier());
 
         await Assert.ThrowsAsync<NotFoundException>(() => service.GetItineraryByIdAsync("missing"));
     }

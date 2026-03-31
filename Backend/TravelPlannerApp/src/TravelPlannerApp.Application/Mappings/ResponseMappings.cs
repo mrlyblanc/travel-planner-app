@@ -2,6 +2,7 @@ using System.Text.Json;
 using TravelPlannerApp.Application.Common.Utilities;
 using TravelPlannerApp.Application.Contracts.Events;
 using TravelPlannerApp.Application.Contracts.Itineraries;
+using TravelPlannerApp.Application.Contracts.Notifications;
 using TravelPlannerApp.Application.Contracts.Users;
 using TravelPlannerApp.Domain.Entities;
 
@@ -108,5 +109,18 @@ public static class ResponseMappings
             snapshot,
             log.ChangedByUserId,
             log.ChangedAtUtc);
+    }
+
+    public static UserNotificationResponse ToResponse(this UserNotification notification)
+    {
+        return new UserNotificationResponse(
+            notification.Id,
+            notification.Type,
+            notification.Title,
+            notification.Message,
+            notification.ItineraryId,
+            notification.ActorUserId,
+            notification.CreatedAtUtc,
+            notification.ReadAtUtc);
     }
 }

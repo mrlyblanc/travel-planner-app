@@ -4,6 +4,7 @@ using TravelPlannerApp.Application.Abstractions.Persistence;
 using TravelPlannerApp.Application.Abstractions.Realtime;
 using TravelPlannerApp.Application.Abstractions.Security;
 using TravelPlannerApp.Application.Common.Utilities;
+using TravelPlannerApp.Application.Contracts.Notifications;
 using TravelPlannerApp.Application.Mappings;
 using TravelPlannerApp.Domain.Entities;
 using TravelPlannerApp.Domain.Enums;
@@ -35,6 +36,21 @@ internal sealed class FakeRealtimeNotifier : IItineraryRealtimeNotifier
     public Task NotifyAsync(string itineraryId, ItineraryRealtimeNotification notification, CancellationToken cancellationToken = default)
     {
         Notifications.Add(notification);
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class FakeUserRealtimeNotifier : IUserRealtimeNotifier
+{
+    public List<(string UserId, UserNotificationResponse Notification)> Notifications { get; } = [];
+
+    public Task NotifyUsersAsync(IEnumerable<string> userIds, UserNotificationResponse notification, CancellationToken cancellationToken = default)
+    {
+        foreach (var userId in userIds)
+        {
+            Notifications.Add((userId, notification));
+        }
+
         return Task.CompletedTask;
     }
 }
@@ -176,6 +192,19 @@ internal sealed class FakeItineraryRepository : IItineraryRepository
             itinerary.Id == itineraryId && itinerary.Members.Any(member => member.UserId == userId)));
     }
 
+    public Task<Itinerary?> GetByShareCodeAsync(string shareCode, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(Itineraries.FirstOrDefault(itinerary =>
+            string.Equals(itinerary.ShareCode, shareCode, StringComparison.OrdinalIgnoreCase)));
+    }
+
+    public Task<bool> ShareCodeExistsAsync(string shareCode, string? excludeItineraryId = null, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(Itineraries.Any(itinerary =>
+            !string.Equals(itinerary.Id, excludeItineraryId, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(itinerary.ShareCode, shareCode, StringComparison.OrdinalIgnoreCase)));
+    }
+
     public Task<bool> IsMemberAsync(string itineraryId, string userId, CancellationToken cancellationToken = default)
     {
         return Task.FromResult(Itineraries.Any(itinerary =>
@@ -205,6 +234,37 @@ internal sealed class FakeItineraryRepository : IItineraryRepository
             var itinerary = Itineraries.First(itineraryItem => itineraryItem.Id == member.ItineraryId);
             itinerary.Members.Remove(member);
         }
+    }
+}
+
+internal sealed class FakeUserNotificationRepository : IUserNotificationRepository
+{
+    public List<UserNotification> Notifications { get; } = [];
+
+    public Task<List<UserNotification>> ListByUserIdAsync(string userId, int limit = 50, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(
+            Notifications
+                .Where(notification => string.Equals(notification.UserId, userId, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(static notification => notification.CreatedAtUtc)
+                .Take(limit)
+                .ToList());
+    }
+
+    public Task<UserNotification?> GetByIdAsync(string notificationId, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(Notifications.FirstOrDefault(notification => notification.Id == notificationId));
+    }
+
+    public Task AddRangeAsync(IEnumerable<UserNotification> notifications, CancellationToken cancellationToken = default)
+    {
+        Notifications.AddRange(notifications);
+        return Task.CompletedTask;
+    }
+
+    public void Remove(UserNotification notification)
+    {
+        Notifications.Remove(notification);
     }
 }
 
@@ -282,6 +342,8 @@ internal static class TestDataFactory
             Title = title,
             Destination = "Tokyo",
             Description = "Test itinerary",
+            ShareCode = "48152",
+            ShareCodeUpdatedAtUtc = new DateTime(2026, 2, 1, 0, 0, 0, DateTimeKind.Utc),
             StartDate = startDate ?? new DateOnly(2026, 4, 14),
             EndDate = endDate ?? new DateOnly(2026, 4, 18),
             CreatedById = createdById,

@@ -17,5 +17,6 @@ public sealed class User
     public ICollection<Event> CreatedEvents { get; set; } = new List<Event>();
     public ICollection<Event> UpdatedEvents { get; set; } = new List<Event>();
     public ICollection<EventAuditLog> EventAuditLogs { get; set; } = new List<EventAuditLog>();
+    public ICollection<UserNotification> Notifications { get; set; } = new List<UserNotification>();
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
 }

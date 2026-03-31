@@ -6,6 +6,7 @@ using TravelPlannerApp.Api.IntegrationTests.Support;
 using TravelPlannerApp.Application.Contracts.Auth;
 using TravelPlannerApp.Application.Contracts.Events;
 using TravelPlannerApp.Application.Contracts.Itineraries;
+using TravelPlannerApp.Application.Contracts.Notifications;
 using TravelPlannerApp.Application.Contracts.Users;
 using TravelPlannerApp.Domain.Enums;
 
@@ -781,6 +782,32 @@ public sealed class MinimalApiEndpointsTests
     }
 
     [Fact]
+    public async Task GetShareCode_WhenUserIsOwner_ReturnsCodeAndVersion()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
+
+        var response = await client.GetAsync("/api/itineraries/itinerary-tokyo/share-code");
+
+        response.EnsureSuccessStatusCode();
+        Assert.True(response.Headers.ETag is not null);
+        var payload = await response.Content.ReadFromJsonAsync<ItineraryShareCodeResponse>(JsonOptions);
+        Assert.NotNull(payload);
+        Assert.Equal("48152", payload!.Code);
+    }
+
+    [Fact]
+    public async Task GetShareCode_WhenUserIsNotOwner_ReturnsForbidden()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync(LucaEmail);
+
+        var response = await client.GetAsync("/api/itineraries/itinerary-tokyo/share-code");
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task ReplaceMembers_WhenCreatorIsOmitted_KeepsCreatorInResponse()
     {
         using var factory = new TravelPlannerApiFactory();
@@ -799,6 +826,22 @@ public sealed class MinimalApiEndpointsTests
 
         Assert.NotNull(members);
         Assert.Contains(members!, member => member.UserId == "user-ava");
+    }
+
+    [Fact]
+    public async Task ReplaceMembers_WhenAddingNewContributorDirectly_ReturnsBadRequestProblem()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
+
+        var staleEtag = await GetEtagAsync(client, "/api/itineraries/itinerary-tokyo/members");
+
+        var response = await client.SendAsync(CreateIfMatchRequest(HttpMethod.Put, "/api/itineraries/itinerary-tokyo/members", new ReplaceItineraryMembersRequest
+        {
+            UserIds = ["user-ava", "user-luca", "user-mina", "user-noah"]
+        }, staleEtag));
+
+        await AssertProblemAsync(response, HttpStatusCode.BadRequest, "Bad Request");
     }
 
     [Fact]
@@ -856,6 +899,100 @@ public sealed class MinimalApiEndpointsTests
         var response = await client.SendAsync(CreateIfMatchRequest(HttpMethod.Delete, "/api/itineraries/itinerary-tokyo/members/user-ava", null, staleEtag));
 
         await AssertProblemAsync(response, HttpStatusCode.BadRequest, "Bad Request");
+    }
+
+    [Fact]
+    public async Task JoinByCode_WhenCodeIsValid_AddsMemberAndCreatesNotifications()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var memberClient = await factory.CreateAuthenticatedClientAsync(NoahEmail);
+
+        var joinResponse = await memberClient.PostAsJsonAsync("/api/itineraries/join-by-code", new JoinItineraryByCodeRequest
+        {
+            Code = "48152"
+        }, JsonOptions);
+
+        joinResponse.EnsureSuccessStatusCode();
+        var joinedItinerary = await joinResponse.Content.ReadFromJsonAsync<ItineraryResponse>(JsonOptions);
+        Assert.NotNull(joinedItinerary);
+        Assert.Equal("itinerary-tokyo", joinedItinerary!.Id);
+
+        var accessibleItineraries = await memberClient.GetFromJsonAsync<List<ItineraryResponse>>("/api/itineraries", JsonOptions);
+        Assert.NotNull(accessibleItineraries);
+        Assert.Contains(accessibleItineraries!, itinerary => itinerary.Id == "itinerary-tokyo");
+
+        var memberNotifications = await memberClient.GetFromJsonAsync<List<UserNotificationResponse>>("/api/notifications", JsonOptions);
+        Assert.NotNull(memberNotifications);
+        Assert.Contains(memberNotifications!, notification => notification.Type == "itinerary.member.added" && notification.ItineraryId == "itinerary-tokyo");
+
+        using var ownerClient = await factory.CreateAuthenticatedClientAsync(AvaEmail);
+        var ownerNotifications = await ownerClient.GetFromJsonAsync<List<UserNotificationResponse>>("/api/notifications", JsonOptions);
+        Assert.NotNull(ownerNotifications);
+        Assert.Contains(ownerNotifications!, notification => notification.Type == "itinerary.member.joined" && notification.ItineraryId == "itinerary-tokyo");
+    }
+
+    [Fact]
+    public async Task RemoveMember_WhenOwnerRemovesContributor_CreatesRemovalNotification()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var ownerClient = await factory.CreateAuthenticatedClientAsync(AvaEmail);
+        using var removedMemberClient = await factory.CreateAuthenticatedClientAsync(MinaEmail);
+        var staleEtag = await GetEtagAsync(ownerClient, "/api/itineraries/itinerary-tokyo/members");
+
+        var response = await ownerClient.SendAsync(CreateIfMatchRequest(HttpMethod.Delete, "/api/itineraries/itinerary-tokyo/members/user-mina", null, staleEtag));
+
+        response.EnsureSuccessStatusCode();
+
+        var notifications = await removedMemberClient.GetFromJsonAsync<List<UserNotificationResponse>>("/api/notifications", JsonOptions);
+        Assert.NotNull(notifications);
+        Assert.Contains(notifications!, notification => notification.Type == "itinerary.member.removed" && notification.ItineraryId == "itinerary-tokyo");
+    }
+
+    [Fact]
+    public async Task DeleteNotification_WhenCurrentUserOwnsNotification_RemovesItFromList()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var memberClient = await factory.CreateAuthenticatedClientAsync(NoahEmail);
+
+        var joinResponse = await memberClient.PostAsJsonAsync("/api/itineraries/join-by-code", new JoinItineraryByCodeRequest
+        {
+            Code = "48152"
+        }, JsonOptions);
+        joinResponse.EnsureSuccessStatusCode();
+
+        var notifications = await memberClient.GetFromJsonAsync<List<UserNotificationResponse>>("/api/notifications", JsonOptions);
+        Assert.NotNull(notifications);
+        var notification = notifications!.First(entry => entry.Type == "itinerary.member.added" && entry.ItineraryId == "itinerary-tokyo");
+
+        var deleteResponse = await memberClient.DeleteAsync($"/api/notifications/{notification.Id}");
+
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+
+        var remainingNotifications = await memberClient.GetFromJsonAsync<List<UserNotificationResponse>>("/api/notifications", JsonOptions);
+        Assert.NotNull(remainingNotifications);
+        Assert.DoesNotContain(remainingNotifications!, entry => entry.Id == notification.Id);
+    }
+
+    [Fact]
+    public async Task DeleteNotification_WhenNotificationBelongsToAnotherUser_ReturnsNotFound()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var ownerClient = await factory.CreateAuthenticatedClientAsync(AvaEmail);
+        using var memberClient = await factory.CreateAuthenticatedClientAsync(NoahEmail);
+
+        var joinResponse = await memberClient.PostAsJsonAsync("/api/itineraries/join-by-code", new JoinItineraryByCodeRequest
+        {
+            Code = "48152"
+        }, JsonOptions);
+        joinResponse.EnsureSuccessStatusCode();
+
+        var ownerNotifications = await ownerClient.GetFromJsonAsync<List<UserNotificationResponse>>("/api/notifications", JsonOptions);
+        Assert.NotNull(ownerNotifications);
+        var ownerNotification = ownerNotifications!.First(entry => entry.Type == "itinerary.member.joined" && entry.ItineraryId == "itinerary-tokyo");
+
+        var deleteResponse = await memberClient.DeleteAsync($"/api/notifications/{ownerNotification.Id}");
+
+        await AssertProblemAsync(deleteResponse, HttpStatusCode.NotFound, "Not Found");
     }
 
     [Fact]

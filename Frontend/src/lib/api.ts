@@ -1,7 +1,8 @@
 import { normalizeCurrencyCode } from './currency';
 import { getDefaultEventColor, normalizeEventColor } from './events';
 import type { EventAuditLog, EventAuditSnapshot, EventCategory, ItineraryEvent } from '../types/event';
-import type { Itinerary, ItineraryMember } from '../types/itinerary';
+import type { UserNotification } from '../types/notification';
+import type { Itinerary, ItineraryMember, ItineraryShareCode } from '../types/itinerary';
 import type { User } from '../types/user';
 
 const API_VERSION = import.meta.env.VITE_API_VERSION?.trim() || '1.0';
@@ -121,6 +122,13 @@ interface ItineraryMemberResponseDto {
   addedAtUtc: string;
 }
 
+interface ItineraryShareCodeResponseDto {
+  itineraryId: string;
+  version: string;
+  code: string;
+  updatedAtUtc: string;
+}
+
 interface EventResponseDto {
   id: string;
   version: string;
@@ -175,6 +183,17 @@ interface EventAuditLogResponseDto {
   changedAtUtc: string;
 }
 
+interface UserNotificationResponseDto {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  itineraryId?: string | null;
+  actorUserId?: string | null;
+  createdAtUtc: string;
+  readAtUtc?: string | null;
+}
+
 export interface AuthSession {
   accessToken: string;
   tokenType: string;
@@ -218,6 +237,19 @@ export interface ItineraryRealtimeNotification {
   occurredAtUtc: string;
   payload?: unknown;
 }
+
+export interface UserRealtimeNotificationDto {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  itineraryId?: string | null;
+  actorUserId?: string | null;
+  createdAtUtc: string;
+  readAtUtc?: string | null;
+}
+
+export interface UserRealtimeNotification extends UserNotification {}
 
 export class ApiError extends Error {
   readonly status: number;
@@ -403,6 +435,13 @@ const mapMemberResponse = (member: ItineraryMemberResponseDto): ItineraryMember 
   addedAt: member.addedAtUtc,
 });
 
+const mapShareCodeResponse = (shareCode: ItineraryShareCodeResponseDto): ItineraryShareCode => ({
+  itineraryId: shareCode.itineraryId,
+  version: shareCode.version,
+  code: shareCode.code,
+  updatedAt: normalizeUtcTimestamp(shareCode.updatedAtUtc),
+});
+
 const mapItineraryResponse = (itinerary: ItineraryResponseDto, members: ItineraryMember[]): Itinerary => ({
   id: itinerary.id,
   version: itinerary.version,
@@ -471,6 +510,20 @@ const mapAuditLog = (auditLog: EventAuditLogResponseDto): EventAuditLog => ({
   changedBy: auditLog.changedByUserId,
   changedAt: normalizeUtcTimestamp(auditLog.changedAtUtc),
 });
+
+const mapUserNotificationResponse = (notification: UserNotificationResponseDto | UserRealtimeNotificationDto): UserNotification => ({
+  id: notification.id,
+  type: notification.type,
+  title: notification.title,
+  message: notification.message,
+  itineraryId: notification.itineraryId ?? null,
+  actorUserId: notification.actorUserId ?? null,
+  createdAt: normalizeUtcTimestamp(notification.createdAtUtc),
+  readAt: normalizeUtcTimestamp(notification.readAtUtc ?? null) || null,
+});
+
+export const mapUserRealtimeNotification = (notification: UserRealtimeNotificationDto): UserRealtimeNotification =>
+  mapUserNotificationResponse(notification);
 
 const toItineraryPayload = (input: ItineraryInputDto) => ({
   title: input.title,
@@ -629,6 +682,37 @@ export const travelApi = {
     return response.data.map(mapMemberResponse);
   },
 
+  async getItineraryShareCode(token: string, itineraryId: string) {
+    const response = await apiRequest<ItineraryShareCodeResponseDto>(`/itineraries/${itineraryId}/share-code`, { token });
+    return mapShareCodeResponse({
+      ...response.data,
+      version: response.etag ?? response.data.version,
+    });
+  },
+
+  async rotateItineraryShareCode(token: string, itineraryId: string, version: string) {
+    const response = await apiRequest<ItineraryShareCodeResponseDto>(`/itineraries/${itineraryId}/share-code/rotate`, {
+      method: 'POST',
+      token,
+      ifMatch: toIfMatchHeader(version),
+    });
+
+    return mapShareCodeResponse({
+      ...response.data,
+      version: response.etag ?? response.data.version,
+    });
+  },
+
+  async joinItineraryByCode(token: string, code: string) {
+    const response = await apiRequest<ItineraryResponseDto>('/itineraries/join-by-code', {
+      method: 'POST',
+      token,
+      body: { code },
+    });
+
+    return response.data;
+  },
+
   async replaceItineraryMembers(token: string, itineraryId: string, userIds: string[], version: string) {
     const response = await apiRequest<ItineraryMemberResponseDto[]>(`/itineraries/${itineraryId}/members`, {
       method: 'PUT',
@@ -654,6 +738,34 @@ export const travelApi = {
       members: response.data.map(mapMemberResponse),
       version: response.etag ?? version,
     };
+  },
+
+  async listNotifications(token: string) {
+    const response = await apiRequest<UserNotificationResponseDto[]>('/notifications', { token });
+    return response.data.map(mapUserNotificationResponse);
+  },
+
+  async markNotificationRead(token: string, notificationId: string) {
+    const response = await apiRequest<UserNotificationResponseDto>(`/notifications/${notificationId}/read`, {
+      method: 'POST',
+      token,
+    });
+
+    return mapUserNotificationResponse(response.data);
+  },
+
+  async markAllNotificationsRead(token: string) {
+    await apiRequest<{ markedCount: number }>('/notifications/read-all', {
+      method: 'POST',
+      token,
+    });
+  },
+
+  async deleteNotification(token: string, notificationId: string) {
+    await apiRequest<void>(`/notifications/${notificationId}`, {
+      method: 'DELETE',
+      token,
+    });
   },
 
   async listEvents(token: string, itineraryId: string) {

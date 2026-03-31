@@ -56,6 +56,32 @@ public static class ItineraryEndpoints
             .RequireIfMatchHeader()
             .WithSummary("Update itinerary");
 
+        group.MapGet("/{itineraryId}/share-code", async Task<IResult> (string itineraryId, IItineraryService service, HttpContext httpContext, CancellationToken cancellationToken) =>
+        {
+            var response = await service.GetShareCodeAsync(itineraryId, cancellationToken);
+            httpContext.Response.SetETag(response.Version);
+            return Results.Ok(response);
+        })
+            .WithSummary("Get itinerary share code");
+
+        group.MapPost("/{itineraryId}/share-code/rotate", async Task<IResult> (string itineraryId, IItineraryService service, HttpContext httpContext, CancellationToken cancellationToken) =>
+        {
+            var response = await service.RotateShareCodeAsync(itineraryId, httpContext.Request.GetIfMatchVersion(), cancellationToken);
+            httpContext.Response.SetETag(response.Version);
+            return Results.Ok(response);
+        })
+            .RequireIfMatchHeader()
+            .WithSummary("Rotate itinerary share code");
+
+        group.MapPost("/join-by-code", async (JoinItineraryByCodeRequest request, IItineraryService service, HttpContext httpContext, CancellationToken cancellationToken) =>
+        {
+            var response = await service.JoinByCodeAsync(request, cancellationToken);
+            httpContext.Response.SetETag(response.Version);
+            return Results.Ok(response);
+        })
+            .Validate<JoinItineraryByCodeRequest>()
+            .WithSummary("Join an itinerary with a share code");
+
         return builder;
     }
 }

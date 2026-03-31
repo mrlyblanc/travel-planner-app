@@ -7,6 +7,8 @@ public sealed class Itinerary
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
     public string Destination { get; set; } = string.Empty;
+    public string ShareCode { get; set; } = string.Empty;
+    public DateTime ShareCodeUpdatedAtUtc { get; set; }
     public DateOnly StartDate { get; set; }
     public DateOnly EndDate { get; set; }
     public string CreatedById { get; set; } = string.Empty;

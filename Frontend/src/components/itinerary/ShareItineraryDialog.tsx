@@ -1,8 +1,7 @@
-import { Check, Crown, UserMinus, UserPlus } from 'lucide-react';
+import { Check, Copy, Crown, RefreshCw, UserMinus } from 'lucide-react';
 import {
   Alert,
   Avatar,
-  Autocomplete,
   Box,
   Button,
   Chip,
@@ -14,12 +13,11 @@ import {
   Divider,
   IconButton,
   Stack,
-  TextField,
   Tooltip,
   Typography,
 } from '@mui/material';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { Itinerary } from '../../types/itinerary';
+import { useEffect, useMemo, useState } from 'react';
+import type { Itinerary, ItineraryShareCode } from '../../types/itinerary';
 import type { User } from '../../types/user';
 
 interface ShareItineraryDialogProps {
@@ -27,11 +25,13 @@ interface ShareItineraryDialogProps {
   currentUserId: string;
   itinerary: Itinerary;
   users: User[];
+  shareCode: ItineraryShareCode | null;
+  isShareCodeLoading: boolean;
   open: boolean;
   onClose: () => void;
+  onLoadShareCode: () => Promise<void>;
+  onRotateShareCode: () => Promise<void>;
   onRemoveMember: (userId: string) => Promise<void>;
-  onSearchUsers: (query: string) => Promise<User[]>;
-  onSubmit: (memberIds: string[]) => void;
 }
 
 export const ShareItineraryDialog = ({
@@ -39,26 +39,21 @@ export const ShareItineraryDialog = ({
   currentUserId,
   itinerary,
   users,
+  shareCode,
+  isShareCodeLoading,
   open,
   onClose,
+  onLoadShareCode,
+  onRotateShareCode,
   onRemoveMember,
-  onSearchUsers,
-  onSubmit,
 }: ShareItineraryDialogProps) => {
-  const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
-  const [searchInput, setSearchInput] = useState('');
-  const [searchResults, setSearchResults] = useState<User[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
   const [pendingRemovalUser, setPendingRemovalUser] = useState<User | null>(null);
   const [removingUserId, setRemovingUserId] = useState<string | null>(null);
-  const searchRequestId = useRef(0);
+  const [isRotatingCode, setIsRotatingCode] = useState(false);
+  const [isCodeCopied, setIsCodeCopied] = useState(false);
 
   const existingMembers = useMemo(
     () => users.filter((user) => itinerary.memberIds.includes(user.id)),
-    [itinerary.memberIds, users],
-  );
-  const availableUsers = useMemo(
-    () => users.filter((user) => !itinerary.memberIds.includes(user.id)),
     [itinerary.memberIds, users],
   );
   const sortedExistingMembers = useMemo(
@@ -87,31 +82,57 @@ export const ShareItineraryDialog = ({
 
   useEffect(() => {
     if (!open) {
+      setPendingRemovalUser(null);
+      setRemovingUserId(null);
+      setIsRotatingCode(false);
+      setIsCodeCopied(false);
       return;
     }
 
-    setSelectedUsers([]);
-    setSearchInput('');
-    setSearchResults(availableUsers);
-    setIsSearching(false);
     setPendingRemovalUser(null);
     setRemovingUserId(null);
-    searchRequestId.current += 1;
+    setIsRotatingCode(false);
+    setIsCodeCopied(false);
   }, [itinerary.id, open]);
 
   useEffect(() => {
-    if (!open) {
+    if (!open || !canManageMembers) {
       return;
     }
 
-    setSelectedUsers((current) => current.filter((user) => !itinerary.memberIds.includes(user.id)));
+    void onLoadShareCode().catch(() => undefined);
+  }, [canManageMembers, itinerary.id, onLoadShareCode, open]);
 
-    if (searchInput.trim().length < 2) {
-      setSearchResults(availableUsers);
-    } else {
-      setSearchResults((current) => current.filter((user) => !itinerary.memberIds.includes(user.id)));
+  useEffect(() => {
+    if (!pendingRemovalUser) {
+      return;
     }
-  }, [availableUsers, itinerary.memberIds, open, searchInput]);
+
+    const isStillMember = itinerary.memberIds.includes(pendingRemovalUser.id);
+    if (!isStillMember) {
+      setPendingRemovalUser(null);
+    }
+  }, [itinerary.memberIds, pendingRemovalUser]);
+
+  const handleOpenRemovalDialog = (member: User) => {
+    if (removingUserId) {
+      return;
+    }
+
+    setPendingRemovalUser(member);
+  };
+
+  useEffect(() => {
+    if (!isCodeCopied) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setIsCodeCopied(false);
+    }, 1800);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [isCodeCopied]);
 
   const handleRemoveMember = async () => {
     if (!pendingRemovalUser) {
@@ -123,208 +144,214 @@ export const ShareItineraryDialog = ({
     try {
       await onRemoveMember(pendingRemovalUser.id);
       setPendingRemovalUser(null);
+    } catch {
+      // Errors are surfaced by the shared app error/toast flow.
     } finally {
       setRemovingUserId(null);
     }
   };
 
+  const handleCopyShareCode = async () => {
+    if (!shareCode?.code) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareCode.code);
+      setIsCodeCopied(true);
+    } catch {
+      setIsCodeCopied(false);
+    }
+  };
+
+  const handleRotateShareCode = async () => {
+    setIsRotatingCode(true);
+
+    try {
+      await onRotateShareCode();
+      setIsCodeCopied(false);
+    } catch {
+      // Errors are surfaced by the shared app error/toast flow.
+    } finally {
+      setIsRotatingCode(false);
+    }
+  };
+
   return (
-    <Dialog fullWidth maxWidth="sm" onClose={onClose} open={open}>
-      <DialogTitle>Share itinerary</DialogTitle>
-      <DialogContent>
-        <Stack mt={1.5} spacing={2.5}>
-          <Box>
-            <Stack direction="row" justifyContent="space-between" spacing={2}>
+    <>
+      <Dialog fullWidth maxWidth="sm" onClose={onClose} open={open}>
+        <DialogTitle>Share itinerary</DialogTitle>
+        <DialogContent>
+          <Stack mt={1.5} spacing={2.5}>
+            <Box>
+              <Stack direction="row" justifyContent="space-between" spacing={2}>
+                <Box>
+                  <Typography fontWeight={600} gutterBottom variant="body2">
+                    Current contributors
+                  </Typography>
+                  <Typography color="text.secondary" variant="body2">
+                    Everyone here can collaborate on the trip. Only the owner can remove contributors or generate a join code.
+                  </Typography>
+                </Box>
+                <Chip
+                  icon={<Crown size={14} />}
+                  label={users.find((user) => user.id === itinerary.createdBy)?.name ?? 'Owner'}
+                  size="small"
+                  variant="outlined"
+                />
+              </Stack>
+
+              <Stack mt={1.5} spacing={1.1}>
+                {sortedExistingMembers.map((member) => {
+                  const isOwner = member.id === itinerary.createdBy;
+                  const isCurrentUser = member.id === currentUserId;
+                  const canRemoveMember = canManageMembers && !isOwner;
+
+                  return (
+                    <Box
+                      key={member.id}
+                      sx={(theme) => ({
+                        alignItems: 'center',
+                        border: `1px solid ${theme.palette.divider}`,
+                        borderRadius: theme.app.radius.md,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        gap: 1.5,
+                        px: 1.5,
+                        py: 1.2,
+                      })}
+                    >
+                      <Stack alignItems="center" direction="row" spacing={1.2}>
+                        <Avatar sx={{ width: 34, height: 34 }}>{member.avatar}</Avatar>
+                        <Box>
+                          <Stack alignItems="center" direction="row" flexWrap="wrap" gap={0.8}>
+                            <Typography fontWeight={600} variant="body2">
+                              {member.name}
+                              {isCurrentUser ? ' (You)' : ''}
+                            </Typography>
+                            {isOwner ? <Chip color="primary" label="Owner" size="small" variant="outlined" /> : null}
+                          </Stack>
+                          <Typography color="text.secondary" variant="caption">
+                            {member.email}
+                          </Typography>
+                        </Box>
+                      </Stack>
+
+                      {canRemoveMember ? (
+                        <Tooltip title={`Remove ${member.name}`}>
+                          <span>
+                            <IconButton
+                              aria-label={`Remove ${member.name}`}
+                              color="error"
+                              disabled={Boolean(removingUserId)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleOpenRemovalDialog(member);
+                              }}
+                              size="small"
+                            >
+                              {removingUserId === member.id ? <CircularProgress color="inherit" size={16} /> : <UserMinus size={16} />}
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      ) : null}
+                    </Box>
+                  );
+                })}
+              </Stack>
+            </Box>
+
+            <Divider />
+
+            {canManageMembers ? (
               <Box>
                 <Typography fontWeight={600} gutterBottom variant="body2">
-                  Current contributors
+                  Join code
                 </Typography>
                 <Typography color="text.secondary" variant="body2">
-                  Everyone here can collaborate on the trip. Only the owner can add or remove contributors.
+                  Share this 5-digit code with a traveler. They can join the itinerary from the home screen without being searched manually.
                 </Typography>
-              </Box>
-              <Chip
-                icon={<Crown size={14} />}
-                label={users.find((user) => user.id === itinerary.createdBy)?.name ?? 'Owner'}
-                size="small"
-                variant="outlined"
-              />
-            </Stack>
 
-            <Stack mt={1.5} spacing={1.1}>
-              {sortedExistingMembers.map((member) => {
-                const isOwner = member.id === itinerary.createdBy;
-                const isCurrentUser = member.id === currentUserId;
-                const canRemoveMember = canManageMembers && !isOwner;
-
-                return (
-                  <Box
-                    key={member.id}
-                    sx={(theme) => ({
-                      alignItems: 'center',
-                      border: `1px solid ${theme.palette.divider}`,
-                      borderRadius: theme.app.radius.md,
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      gap: 1.5,
-                      px: 1.5,
-                      py: 1.2,
-                    })}
-                  >
+                <Box
+                  sx={(theme) => ({
+                    mt: 1.6,
+                    border: `1px solid ${theme.palette.divider}`,
+                    borderRadius: theme.app.radius.md,
+                    bgcolor: theme.app.surfaces.metric,
+                    px: 2,
+                    py: 2,
+                  })}
+                >
+                  {isShareCodeLoading && !shareCode ? (
                     <Stack alignItems="center" direction="row" spacing={1.2}>
-                      <Avatar sx={{ width: 34, height: 34 }}>{member.avatar}</Avatar>
+                      <CircularProgress size={18} />
+                      <Typography color="text.secondary" variant="body2">
+                        Loading share code…
+                      </Typography>
+                    </Stack>
+                  ) : (
+                    <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={2}>
                       <Box>
-                        <Stack alignItems="center" direction="row" flexWrap="wrap" gap={0.8}>
-                          <Typography fontWeight={600} variant="body2">
-                            {member.name}
-                            {isCurrentUser ? ' (You)' : ''}
-                          </Typography>
-                          {isOwner ? <Chip color="primary" label="Owner" size="small" variant="outlined" /> : null}
-                        </Stack>
-                        <Typography color="text.secondary" variant="caption">
-                          {member.email}
+                        <Typography
+                          letterSpacing="0.28em"
+                          sx={{ fontVariantNumeric: 'tabular-nums' }}
+                          variant="h4"
+                        >
+                          {shareCode?.code ?? '-----'}
+                        </Typography>
+                        <Typography color="text.secondary" mt={0.6} variant="caption">
+                          Rotate the code anytime if you only want to accept new collaborators through a fresh invite.
                         </Typography>
                       </Box>
+
+                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                        <Button
+                          onClick={() => void handleCopyShareCode()}
+                          startIcon={isCodeCopied ? <Check size={16} /> : <Copy size={16} />}
+                          variant="outlined"
+                        >
+                          {isCodeCopied ? 'Copied' : 'Copy code'}
+                        </Button>
+                        <Button
+                          disabled={isShareCodeLoading || isRotatingCode}
+                          onClick={() => void handleRotateShareCode()}
+                          startIcon={isRotatingCode ? <CircularProgress color="inherit" size={16} /> : <RefreshCw size={16} />}
+                          variant="outlined"
+                        >
+                          Regenerate
+                        </Button>
+                      </Stack>
                     </Stack>
-
-                    {canRemoveMember ? (
-                      <Tooltip title={`Remove ${member.name}`}>
-                        <span>
-                          <IconButton
-                            aria-label={`Remove ${member.name}`}
-                            color="error"
-                            disabled={Boolean(removingUserId)}
-                            onClick={() => setPendingRemovalUser(member)}
-                            size="small"
-                          >
-                            {removingUserId === member.id ? <CircularProgress color="inherit" size={16} /> : <UserMinus size={16} />}
-                          </IconButton>
-                        </span>
-                      </Tooltip>
-                    ) : null}
-                  </Box>
-                );
-              })}
-            </Stack>
-          </Box>
-
-          <Divider />
-
-          {canManageMembers ? (
-            <Autocomplete
-              disableCloseOnSelect
-              filterOptions={(options) => options}
-              filterSelectedOptions
-              inputValue={searchInput}
-              isOptionEqualToValue={(option, value) => option.id === value.id}
-              loading={isSearching}
-              loadingText="Searching travelers..."
-              multiple
-              getOptionLabel={(option) => `${option.name} (${option.email})`}
-              noOptionsText={searchInput.trim().length < 2 ? 'Type at least 2 characters' : 'No matching travelers'}
-              onChange={(_, value, reason) => {
-                setSelectedUsers(value);
-
-                if (reason === 'selectOption' || reason === 'clear') {
-                  setSearchInput('');
-                  setSearchResults(availableUsers);
-                  setIsSearching(false);
-                  searchRequestId.current += 1;
-                }
-              }}
-              onInputChange={(_, value, reason) => {
-                if (reason === 'reset') {
-                  return;
-                }
-
-                setSearchInput(value);
-                const trimmedValue = value.trim();
-                if (trimmedValue.length < 2) {
-                  setSearchResults(availableUsers);
-                  setIsSearching(false);
-                  searchRequestId.current += 1;
-                  return;
-                }
-
-                const requestId = searchRequestId.current + 1;
-                searchRequestId.current = requestId;
-                setIsSearching(true);
-
-                void onSearchUsers(trimmedValue)
-                  .then((results) => {
-                    if (searchRequestId.current !== requestId) {
-                      return;
-                    }
-
-                    setSearchResults(results.filter((user) => !itinerary.memberIds.includes(user.id)));
-                  })
-                  .catch(() => {
-                    if (searchRequestId.current !== requestId) {
-                      return;
-                    }
-
-                    setSearchResults([]);
-                  })
-                  .finally(() => {
-                    if (searchRequestId.current === requestId) {
-                      setIsSearching(false);
-                    }
-                  });
-              }}
-              options={searchResults}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  helperText="Invite people who should help plan, update, and keep this trip on schedule."
-                  label="Add travelers"
-                  placeholder="Search teammates by name or email"
-                />
-              )}
-              renderOption={(props, option) => (
-                <Box component="li" {...props}>
-                  <Stack alignItems="center" direction="row" spacing={1.2}>
-                    <Avatar sx={{ width: 30, height: 30 }}>{option.avatar}</Avatar>
-                    <Box>
-                      <Typography variant="body2">{option.name}</Typography>
-                      <Typography color="text.secondary" variant="caption">
-                        {option.email}
-                      </Typography>
-                    </Box>
-                  </Stack>
+                  )}
                 </Box>
-              )}
-              value={selectedUsers}
-            />
-          ) : (
-            <Alert severity="info">You can view the contributor list, but only the itinerary owner can update it.</Alert>
-          )}
-
-          <Stack direction="row" spacing={1.2}>
-            <UserPlus size={18} />
-            <Typography color="text.secondary" variant="body2">
-              Added members can build the itinerary together by creating, editing, and rescheduling trip events.
-            </Typography>
+              </Box>
+            ) : (
+              <Alert severity="info">
+                Only the itinerary owner can generate or rotate the join code. If someone needs access, ask the owner to share the current 5-digit code.
+              </Alert>
+            )}
           </Stack>
-        </Stack>
-      </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 3 }}>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button
-          disabled={!canManageMembers || selectedUsers.length === 0}
-          onClick={() => onSubmit(Array.from(new Set([...itinerary.memberIds, ...selectedUsers.map((user) => user.id)])))}
-          startIcon={<Check size={16} />}
-          variant="contained"
-        >
-          Add contributors
-        </Button>
-      </DialogActions>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3 }}>
+          <Button onClick={onClose}>Close</Button>
+        </DialogActions>
+      </Dialog>
 
-      <Dialog maxWidth="xs" onClose={() => (removingUserId ? undefined : setPendingRemovalUser(null))} open={Boolean(pendingRemovalUser)}>
+      <Dialog
+        fullWidth
+        maxWidth="xs"
+        onClose={() => {
+          if (!removingUserId) {
+            setPendingRemovalUser(null);
+          }
+        }}
+        open={open && Boolean(pendingRemovalUser)}
+      >
         <DialogTitle>Remove contributor?</DialogTitle>
         <DialogContent>
           <Typography variant="body2">
             {pendingRemovalUser
-              ? `${pendingRemovalUser.name} will lose access to this itinerary and its events.`
+              ? `${pendingRemovalUser.name} will lose access to this itinerary and all of its shared events.`
               : 'This contributor will lose access to the itinerary.'}
           </Typography>
         </DialogContent>
@@ -337,6 +364,6 @@ export const ShareItineraryDialog = ({
           </Button>
         </DialogActions>
       </Dialog>
-    </Dialog>
+    </>
   );
 };

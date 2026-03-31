@@ -18,7 +18,7 @@ import {
 } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import FullCalendar from '@fullcalendar/react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { useToast } from '../app/providers/ToastProvider';
 import { useTravelStore, type EventInput, type ItineraryInput } from '../app/store/useTravelStore';
@@ -48,8 +48,10 @@ export const ItineraryDetailsPage = () => {
   const currentUserId = useTravelStore((state) => state.currentUserId);
   const itineraries = useTravelStore((state) => state.itineraries);
   const allEvents = useTravelStore((state) => state.events);
+  const itineraryShareCodes = useTravelStore((state) => state.itineraryShareCodes);
   const updateItinerary = useTravelStore((state) => state.updateItinerary);
-  const shareItinerary = useTravelStore((state) => state.shareItinerary);
+  const loadItineraryShareCode = useTravelStore((state) => state.loadItineraryShareCode);
+  const rotateItineraryShareCode = useTravelStore((state) => state.rotateItineraryShareCode);
   const removeItineraryMember = useTravelStore((state) => state.removeItineraryMember);
   const createEvent = useTravelStore((state) => state.createEvent);
   const updateEvent = useTravelStore((state) => state.updateEvent);
@@ -57,7 +59,6 @@ export const ItineraryDetailsPage = () => {
   const rescheduleEvent = useTravelStore((state) => state.rescheduleEvent);
   const loadEventHistory = useTravelStore((state) => state.loadEventHistory);
   const eventHistory = useTravelStore((state) => state.eventHistory);
-  const searchUsers = useTravelStore((state) => state.searchUsers);
   const usersMap = useMemo(() => getUserMap(users), [users]);
   const itinerary = useMemo(
     () => itineraries.find((entry) => entry.id === itineraryId),
@@ -74,31 +75,32 @@ export const ItineraryDetailsPage = () => {
   const [eventDrawerOpen, setEventDrawerOpen] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [draftRange, setDraftRange] = useState<{ start: string; end: string } | null>(null);
-
-  if (!itinerary) {
-    return <Navigate replace to="/itineraries" />;
-  }
+  const [isShareCodeLoading, setIsShareCodeLoading] = useState(false);
+  const itineraryCreatedAt = itinerary?.createdAt ?? '';
+  const itineraryUpdatedAt = itinerary?.updatedAt ?? '';
 
   const sortedEvents = getUpcomingEvents(events);
   const totalCostLabel = formatCurrencySummary(getCostTotalsByCurrency(events), {
     emptyLabel: 'No costs yet',
     maxVisible: 2,
   });
-  const canManage = itinerary.memberIds.includes(currentUserId);
-  const isOwner = itinerary.createdBy === currentUserId;
+  const canManage = itinerary?.memberIds.includes(currentUserId) ?? false;
+  const isOwner = itinerary?.createdBy === currentUserId;
   const selectedEvent = selectedEventId ? events.find((event) => event.id === selectedEventId) ?? null : null;
   const canDeleteSelectedEvent = Boolean(
     selectedEvent && currentUserId && (isOwner || selectedEvent.createdBy === currentUserId),
   );
-  const members = itinerary.memberIds.map((memberId) => usersMap[memberId]).filter(Boolean);
+  const shareCode = itinerary ? itineraryShareCodes[itinerary.id] ?? null : null;
+  const members = itinerary ? itinerary.memberIds.map((memberId) => usersMap[memberId]).filter(Boolean) : [];
   const collaborators = members.filter((member) => member.id !== currentUserId);
   const selectedEventHistory = selectedEvent ? eventHistory[selectedEvent.id] ?? [] : [];
+  const currentItineraryId = itinerary?.id ?? null;
   const latestEventActivityLabel = useMemo(() => {
     const activityTimestamps = [
-      itinerary.createdAt,
-      itinerary.updatedAt,
+      itineraryCreatedAt,
+      itineraryUpdatedAt,
       ...events.map((event) => {
-      const eventLatestTimestamp = dayjs(event.updatedAt).isAfter(dayjs(event.createdAt)) ? event.updatedAt : event.createdAt;
+        const eventLatestTimestamp = dayjs(event.updatedAt).isAfter(dayjs(event.createdAt)) ? event.updatedAt : event.createdAt;
         return eventLatestTimestamp;
       }),
     ].filter(Boolean);
@@ -112,9 +114,13 @@ export const ItineraryDetailsPage = () => {
     }, '' as string);
 
     return latestActivity ? dayjs(latestActivity).fromNow() : 'No activity yet';
-  }, [events, itinerary.createdAt, itinerary.updatedAt]);
+  }, [events, itineraryCreatedAt, itineraryUpdatedAt]);
 
   useEffect(() => {
+    if (!itinerary) {
+      return;
+    }
+
     setActiveView('dayGridMonth');
 
     const calendarApi = calendarRef.current?.getApi();
@@ -124,7 +130,51 @@ export const ItineraryDetailsPage = () => {
 
     calendarApi.changeView('dayGridMonth');
     calendarApi.gotoDate(itinerary.startDate);
-  }, [itinerary.id, itinerary.startDate]);
+  }, [itinerary]);
+
+  const handleLoadShareCode = useCallback(async () => {
+    if (!isOwner || !currentItineraryId) {
+      return;
+    }
+
+    setIsShareCodeLoading(true);
+    try {
+      await loadItineraryShareCode(currentItineraryId);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Unable to load join code.', 'error');
+      throw error;
+    } finally {
+      setIsShareCodeLoading(false);
+    }
+  }, [currentItineraryId, isOwner, loadItineraryShareCode, showToast]);
+
+  const handleRemoveMember = useCallback(async (userId: string) => {
+    if (!itinerary) {
+      return;
+    }
+
+    try {
+      await removeItineraryMember(itinerary.id, userId);
+      showToast('Contributor removed', 'warning');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Unable to remove contributor.', 'error');
+      throw error;
+    }
+  }, [itinerary, removeItineraryMember, showToast]);
+
+  const handleRotateShareCode = useCallback(async () => {
+    if (!currentItineraryId) {
+      return;
+    }
+
+    try {
+      await rotateItineraryShareCode(currentItineraryId);
+      showToast('Join code regenerated');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Unable to regenerate join code.', 'error');
+      throw error;
+    }
+  }, [currentItineraryId, rotateItineraryShareCode, showToast]);
 
   const openCreateEvent = (selection?: { start: string; end: string }) => {
     setSelectedEventId(null);
@@ -136,9 +186,11 @@ export const ItineraryDetailsPage = () => {
     if (eventId) {
       await updateEvent(eventId, values);
       showToast('Event updated');
-    } else {
+    } else if (itinerary) {
       await createEvent(itinerary.id, values);
       showToast('Event created');
+    } else {
+      return;
     }
 
     setEventDrawerOpen(false);
@@ -153,6 +205,10 @@ export const ItineraryDetailsPage = () => {
     setDraftRange(null);
     showToast('Event deleted', 'warning');
   };
+
+  if (!itinerary) {
+    return <Navigate replace to="/itineraries" />;
+  }
 
   return (
     <Stack spacing={3}>
@@ -346,19 +402,14 @@ export const ItineraryDetailsPage = () => {
       <ShareItineraryDialog
         canManageMembers={isOwner}
         currentUserId={currentUserId}
+        isShareCodeLoading={isShareCodeLoading}
         itinerary={itinerary}
         onClose={() => setShareDialogOpen(false)}
-        onRemoveMember={async (userId) => {
-          await removeItineraryMember(itinerary.id, userId);
-          showToast('Contributor removed', 'warning');
-        }}
-        onSearchUsers={searchUsers}
-        onSubmit={async (memberIds) => {
-          await shareItinerary(itinerary.id, memberIds);
-          setShareDialogOpen(false);
-          showToast('Itinerary members updated');
-        }}
+        onLoadShareCode={handleLoadShareCode}
+        onRemoveMember={handleRemoveMember}
+        onRotateShareCode={handleRotateShareCode}
         open={shareDialogOpen}
+        shareCode={shareCode}
         users={users}
       />
 
