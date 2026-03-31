@@ -2,13 +2,14 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowRight, KeyRound } from 'lucide-react';
 import { Alert, Box, Button, Divider, Link, Paper, Stack, TextField, Typography } from '@mui/material';
 import { styled } from '@mui/material/styles';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link as RouterLink, useLocation, useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { useToast } from '../app/providers/ToastProvider';
 import { useTravelStore } from '../app/store/useTravelStore';
 import { AuthShell } from '../components/auth/AuthShell';
+import { SigningInExperience } from '../components/auth/SigningInExperience';
 import { backendConfig } from '../lib/api';
 import { createExistingPasswordSchema } from '../lib/passwordPolicy';
 
@@ -33,6 +34,7 @@ export const LoginPage = () => {
   const clearError = useTravelStore((state) => state.clearError);
   const error = useTravelStore((state) => state.error);
   const isBootstrapping = useTravelStore((state) => state.isBootstrapping);
+  const [signingInEmail, setSigningInEmail] = useState<string | null>(null);
   const {
     register,
     handleSubmit,
@@ -64,23 +66,31 @@ export const LoginPage = () => {
   };
 
   const handleLogin = handleSubmit(async (values) => {
+    const normalizedEmail = values.email.trim().toLowerCase();
+    setSigningInEmail(normalizedEmail);
+
     try {
-      await login(values.email.trim().toLowerCase(), values.password);
+      await login(normalizedEmail, values.password);
       showToast('Signed in successfully');
       navigate(from, { replace: true });
     } catch {
+      setSigningInEmail(null);
       // Store error state drives the inline message.
     }
   });
 
   return (
     <AuthShell
-      alternateActionLabel="Create one"
-      alternateActionTo="/register"
-      alternatePrompt="Need a new account?"
-      eyebrow="Sign in"
-      subtitle="Sign in to review upcoming trips, update shared plans, and keep every booking, stop, and schedule change in one place."
-      supplemental={hasSeededDevLogin ? (
+      alternateActionLabel={signingInEmail ? undefined : 'Create one'}
+      alternateActionTo={signingInEmail ? undefined : '/register'}
+      alternatePrompt={signingInEmail ? undefined : 'Need a new account?'}
+      eyebrow={signingInEmail ? 'Signing in' : 'Sign in'}
+      subtitle={
+        signingInEmail
+          ? 'Free-tier services can take a little time to wake up. We will keep your sign-in running while Trip Board reconnects to your account and workspace data.'
+          : 'Sign in to review upcoming trips, update shared plans, and keep every booking, stop, and schedule change in one place.'
+      }
+      supplemental={!signingInEmail && hasSeededDevLogin ? (
         <DemoCard elevation={0}>
           <Stack direction="row" justifyContent="space-between" spacing={2}>
             <Box>
@@ -108,50 +118,56 @@ export const LoginPage = () => {
           </Stack>
         </DemoCard>
       ) : null}
-      title="Welcome back to Trip Board"
+      title={signingInEmail ? 'Opening your travel workspace' : 'Welcome back to Trip Board'}
     >
-      <form onSubmit={handleLogin}>
-        <Stack spacing={2}>
-          {error ? <Alert severity="error">{error}</Alert> : null}
+      {signingInEmail ? (
+        <SigningInExperience email={signingInEmail} />
+      ) : (
+        <>
+          <form onSubmit={handleLogin}>
+            <Stack spacing={2}>
+              {error ? <Alert severity="error">{error}</Alert> : null}
 
-          <TextField
-            autoComplete="email"
-            autoFocus
-            error={Boolean(errors.email)}
-            helperText={errors.email?.message}
-            label="Email"
-            slotProps={{ inputLabel: { shrink: true } }}
-            {...register('email')}
-          />
+              <TextField
+                autoComplete="email"
+                autoFocus
+                error={Boolean(errors.email)}
+                helperText={errors.email?.message}
+                label="Email"
+                slotProps={{ inputLabel: { shrink: true } }}
+                {...register('email')}
+              />
 
-          <TextField
-            autoComplete="current-password"
-            error={Boolean(errors.password)}
-            helperText={errors.password?.message}
-            label="Password"
-            slotProps={{ inputLabel: { shrink: true } }}
-            type="password"
-            {...register('password')}
-          />
+              <TextField
+                autoComplete="current-password"
+                error={Boolean(errors.password)}
+                helperText={errors.password?.message}
+                label="Password"
+                slotProps={{ inputLabel: { shrink: true } }}
+                type="password"
+                {...register('password')}
+              />
 
-          <Box display="flex" justifyContent="flex-end" mt={-0.5}>
-            <Link component={RouterLink} to="/forgot-password" underline="hover" variant="body2">
-              Forgot password?
-            </Link>
-          </Box>
+              <Box display="flex" justifyContent="flex-end" mt={-0.5}>
+                <Link component={RouterLink} to="/forgot-password" underline="hover" variant="body2">
+                  Forgot password?
+                </Link>
+              </Box>
 
-          <Button endIcon={<ArrowRight size={16} />} size="large" type="submit" variant="contained">
-            {isBootstrapping ? 'Signing in...' : 'Sign in'}
-          </Button>
-        </Stack>
-      </form>
+              <Button endIcon={<ArrowRight size={16} />} size="large" type="submit" variant="contained">
+                {isBootstrapping ? 'Signing in...' : 'Sign in'}
+              </Button>
+            </Stack>
+          </form>
 
-      <Stack alignItems="center" direction="row" mt={2.5} spacing={1}>
-        <KeyRound size={16} />
-        <Typography color="text.secondary" variant="caption">
-          Your account unlocks shared itineraries, real-time trip updates, and a full event activity trail for every stop on the calendar.
-        </Typography>
-      </Stack>
+          <Stack alignItems="center" direction="row" mt={2.5} spacing={1}>
+            <KeyRound size={16} />
+            <Typography color="text.secondary" variant="caption">
+              Your account unlocks shared itineraries, real-time trip updates, and a full event activity trail for every stop on the calendar.
+            </Typography>
+          </Stack>
+        </>
+      )}
     </AuthShell>
   );
 };

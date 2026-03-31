@@ -8,9 +8,9 @@ interface AuthShellProps extends PropsWithChildren {
   eyebrow: string;
   title: string;
   subtitle: string;
-  alternatePrompt: string;
-  alternateActionLabel: string;
-  alternateActionTo: string;
+  alternatePrompt?: string;
+  alternateActionLabel?: string;
+  alternateActionTo?: string;
   supplemental?: ReactNode;
 }
 
@@ -111,12 +111,14 @@ export const AuthShell = ({
             </Typography>
           </Stack>
 
-          <Typography color="text.secondary" mt={2.5} variant="body2">
-            {alternatePrompt}{' '}
-            <Link component={RouterLink} to={alternateActionTo} underline="hover">
-              {alternateActionLabel}
-            </Link>
-          </Typography>
+          {alternatePrompt && alternateActionLabel && alternateActionTo ? (
+            <Typography color="text.secondary" mt={2.5} variant="body2">
+              {alternatePrompt}{' '}
+              <Link component={RouterLink} to={alternateActionTo} underline="hover">
+                {alternateActionLabel}
+              </Link>
+            </Typography>
+          ) : null}
 
           <Box mt={3}>{children}</Box>
         </FormCard>

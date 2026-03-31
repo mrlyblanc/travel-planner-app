@@ -30,6 +30,7 @@ import { useCurrentUser } from '../../hooks/useCurrentUser';
 import { ApiError } from '../../lib/api';
 import { fromNow } from '../../lib/date';
 import type { UserNotification } from '../../types/notification';
+import { RouteLoadingScreen } from '../common/RouteLoadingScreen';
 import { SidebarContent } from './SidebarContent';
 
 const drawerWidth = 320;
@@ -162,6 +163,24 @@ export const AppShell = () => {
       setDeletingNotificationId(null);
     }
   };
+
+  if (isLoggingOut) {
+    return (
+      <Box
+        sx={{
+          minHeight: '100vh',
+          px: 3,
+          backgroundColor: theme.palette.background.default,
+        }}
+      >
+        <RouteLoadingScreen
+          description="Closing your session and returning you to the sign-in screen."
+          minHeight="100vh"
+          title="Signing out"
+        />
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
