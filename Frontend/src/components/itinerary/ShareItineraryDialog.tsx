@@ -100,12 +100,12 @@ export const ShareItineraryDialog = ({
   }, [itinerary.id, open]);
 
   useEffect(() => {
-    if (!open || !canManageMembers) {
+    if (!open || !canManageMembers || shareCode || isShareCodeLoading) {
       return;
     }
 
     void onLoadShareCode().catch(() => undefined);
-  }, [canManageMembers, itinerary.id, onLoadShareCode, open]);
+  }, [canManageMembers, isShareCodeLoading, onLoadShareCode, open, shareCode]);
 
   useEffect(() => {
     if (!pendingRemovalUser) {

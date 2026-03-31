@@ -41,8 +41,9 @@ const EventDrawer = lazy(() =>
 const ItineraryFormDialog = lazy(() =>
   import('../components/itinerary/ItineraryFormDialog').then((module) => ({ default: module.ItineraryFormDialog })),
 );
+const loadShareItineraryDialog = () => import('../components/itinerary/ShareItineraryDialog');
 const ShareItineraryDialog = lazy(() =>
-  import('../components/itinerary/ShareItineraryDialog').then((module) => ({ default: module.ShareItineraryDialog })),
+  loadShareItineraryDialog().then((module) => ({ default: module.ShareItineraryDialog })),
 );
 
 const viewOptions: Array<{ value: CalendarView; label: string }> = [
@@ -88,6 +89,7 @@ export const ItineraryDetailsPage = () => {
   const [rangeLabel, setRangeLabel] = useState('');
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [isPreparingShareDialog, setIsPreparingShareDialog] = useState(false);
   const [eventDrawerOpen, setEventDrawerOpen] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [draftRange, setDraftRange] = useState<{ start: string; end: string } | null>(null);
@@ -223,6 +225,22 @@ export const ItineraryDetailsPage = () => {
     }
   }, [currentItineraryId, rotateItineraryShareCode, showToast]);
 
+  const handleOpenShareDialog = useCallback(async () => {
+    setIsPreparingShareDialog(true);
+
+    try {
+      await loadShareItineraryDialog();
+
+      if (isOwner && !shareCode) {
+        await handleLoadShareCode().catch(() => undefined);
+      }
+
+      setShareDialogOpen(true);
+    } finally {
+      setIsPreparingShareDialog(false);
+    }
+  }, [handleLoadShareCode, isOwner, shareCode]);
+
   const openCreateEvent = (selection?: { start: string; end: string }) => {
     setSelectedEventId(null);
     setDraftRange(selection ?? null);
@@ -322,7 +340,12 @@ export const ItineraryDetailsPage = () => {
                 <HeaderActionButton onClick={() => setEditDialogOpen(true)} startIcon={<Edit3 size={16} />} variant="outlined">
                   Edit trip
                 </HeaderActionButton>
-                <HeaderActionButton onClick={() => setShareDialogOpen(true)} startIcon={<Share2 size={16} />} variant="outlined">
+                <HeaderActionButton
+                  loading={isPreparingShareDialog}
+                  onClick={() => void handleOpenShareDialog()}
+                  startIcon={<Share2 size={16} />}
+                  variant="outlined"
+                >
                   Share
                 </HeaderActionButton>
                 <Button disabled={!canManage} onClick={() => openCreateEvent()} startIcon={<Plus size={16} />} variant="contained">
