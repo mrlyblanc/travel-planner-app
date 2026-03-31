@@ -15,8 +15,14 @@ const ItineraryListPage = lazy(() =>
 const LoginPage = lazy(() =>
   import('../../pages/LoginPage').then((module) => ({ default: module.LoginPage })),
 );
+const ForgotPasswordPage = lazy(() =>
+  import('../../pages/ForgotPasswordPage').then((module) => ({ default: module.ForgotPasswordPage })),
+);
 const RegisterPage = lazy(() =>
   import('../../pages/RegisterPage').then((module) => ({ default: module.RegisterPage })),
+);
+const ResetPasswordPage = lazy(() =>
+  import('../../pages/ResetPasswordPage').then((module) => ({ default: module.ResetPasswordPage })),
 );
 
 const withRouteSuspense = (element: ReactNode) => (
@@ -59,8 +65,16 @@ export const router = createBrowserRouter([
         element: withRouteSuspense(<LoginPage />),
       },
       {
+        path: '/forgot-password',
+        element: withRouteSuspense(<ForgotPasswordPage />),
+      },
+      {
         path: '/register',
         element: withRouteSuspense(<RegisterPage />),
+      },
+      {
+        path: '/reset-password',
+        element: withRouteSuspense(<ResetPasswordPage />),
       },
     ],
   },

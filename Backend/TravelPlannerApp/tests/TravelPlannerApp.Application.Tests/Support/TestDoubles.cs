@@ -172,6 +172,27 @@ internal sealed class FakeRefreshTokenRepository : IRefreshTokenRepository
     }
 }
 
+internal sealed class FakePasswordResetTokenRepository : IPasswordResetTokenRepository
+{
+    public List<PasswordResetToken> Tokens { get; } = [];
+
+    public Task<PasswordResetToken?> GetByTokenHashAsync(string tokenHash, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(Tokens.FirstOrDefault(token => token.TokenHash == tokenHash));
+    }
+
+    public Task<List<PasswordResetToken>> ListByUserIdAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(Tokens.Where(token => token.UserId == userId).ToList());
+    }
+
+    public Task AddAsync(PasswordResetToken token, CancellationToken cancellationToken = default)
+    {
+        Tokens.Add(token);
+        return Task.CompletedTask;
+    }
+}
+
 internal sealed class FakeItineraryRepository : IItineraryRepository
 {
     public List<Itinerary> Itineraries { get; } = [];

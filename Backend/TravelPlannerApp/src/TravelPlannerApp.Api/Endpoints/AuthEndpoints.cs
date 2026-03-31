@@ -5,7 +5,6 @@ using TravelPlannerApp.Application.Common.Exceptions;
 using TravelPlannerApp.Application.Contracts.Auth;
 using TravelPlannerApp.Application.Services;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.RateLimiting;
 
 namespace TravelPlannerApp.Api.Endpoints;
 
@@ -64,6 +63,41 @@ public static class AuthEndpoints
             .AllowAnonymous()
             .RequireRateLimiting(ApiRateLimitPolicyNames.AuthMutation)
             .WithSummary("Revoke a refresh token");
+
+        group.MapPost("/forgot-password", async (
+            ForgotPasswordRequest request,
+            IAuthService service,
+            IHostEnvironment environment,
+            ILoggerFactory loggerFactory,
+            CancellationToken cancellationToken) =>
+        {
+            var result = await service.RequestPasswordResetAsync(request, cancellationToken);
+            var isDevExperienceEnabled = environment.IsDevelopment() || environment.IsEnvironment("Testing");
+
+            if (isDevExperienceEnabled && !string.IsNullOrWhiteSpace(result.DevResetToken))
+            {
+                loggerFactory.CreateLogger("TravelPlannerApp.Api.PasswordReset")
+                    .LogWarning("Development password reset token issued for {Email}: {Token}", request.Email.Trim(), result.DevResetToken);
+            }
+
+            return TypedResults.Ok(new ForgotPasswordResponse(
+                result.Message,
+                isDevExperienceEnabled ? result.DevResetToken : null));
+        })
+            .AllowAnonymous()
+            .RequireRateLimiting(ApiRateLimitPolicyNames.AuthMutation)
+            .Validate<ForgotPasswordRequest>()
+            .WithSummary("Request a password reset link");
+
+        group.MapPost("/reset-password", async (ResetPasswordRequest request, IAuthService service, CancellationToken cancellationToken) =>
+        {
+            await service.ResetPasswordAsync(request, cancellationToken);
+            return TypedResults.NoContent();
+        })
+            .AllowAnonymous()
+            .RequireRateLimiting(ApiRateLimitPolicyNames.AuthMutation)
+            .Validate<ResetPasswordRequest>()
+            .WithSummary("Reset a password with a one-time token");
 
         group.MapPost("/change-password", async (ChangePasswordRequest request, IAuthService service, CancellationToken cancellationToken) =>
         {

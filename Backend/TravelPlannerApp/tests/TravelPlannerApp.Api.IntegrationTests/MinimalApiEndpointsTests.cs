@@ -193,6 +193,63 @@ public sealed class MinimalApiEndpointsTests
     }
 
     [Fact]
+    public async Task ForgotPassword_WithKnownEmail_ReturnsGenericMessageAndDevResetToken()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = factory.CreateApiClient();
+
+        var response = await client.PostAsJsonAsync("/api/auth/forgot-password", new ForgotPasswordRequest
+        {
+            Email = AvaEmail
+        }, JsonOptions);
+
+        response.EnsureSuccessStatusCode();
+        var payload = await response.Content.ReadFromJsonAsync<ForgotPasswordResponse>(JsonOptions);
+        Assert.NotNull(payload);
+        Assert.Equal("If that email is registered, a password reset link is ready.", payload!.Message);
+        Assert.False(string.IsNullOrWhiteSpace(payload.DevResetToken));
+    }
+
+    [Fact]
+    public async Task ResetPassword_WithDevResetToken_UpdatesPasswordAndRequiresRelogin()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = factory.CreateApiClient();
+
+        var forgotPasswordResponse = await client.PostAsJsonAsync("/api/auth/forgot-password", new ForgotPasswordRequest
+        {
+            Email = AvaEmail
+        }, JsonOptions);
+        forgotPasswordResponse.EnsureSuccessStatusCode();
+        var forgotPasswordPayload = await forgotPasswordResponse.Content.ReadFromJsonAsync<ForgotPasswordResponse>(JsonOptions);
+        Assert.NotNull(forgotPasswordPayload);
+        Assert.False(string.IsNullOrWhiteSpace(forgotPasswordPayload!.DevResetToken));
+
+        var resetResponse = await client.PostAsJsonAsync("/api/auth/reset-password", new ResetPasswordRequest
+        {
+            Token = forgotPasswordPayload.DevResetToken!,
+            NewPassword = "ForgotPass123!",
+            ConfirmNewPassword = "ForgotPass123!"
+        }, JsonOptions);
+
+        Assert.Equal(HttpStatusCode.NoContent, resetResponse.StatusCode);
+
+        var oldLoginResponse = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
+        {
+            Email = AvaEmail,
+            Password = TravelPlannerApiFactory.SeedPassword
+        }, JsonOptions);
+        Assert.Equal(HttpStatusCode.Unauthorized, oldLoginResponse.StatusCode);
+
+        var newLoginResponse = await client.PostAsJsonAsync("/api/auth/login", new LoginRequest
+        {
+            Email = AvaEmail,
+            Password = "ForgotPass123!"
+        }, JsonOptions);
+        newLoginResponse.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
     public async Task AuthenticatedJsonResponse_WhenClientAcceptsGzip_IsCompressed()
     {
         using var factory = new TravelPlannerApiFactory();

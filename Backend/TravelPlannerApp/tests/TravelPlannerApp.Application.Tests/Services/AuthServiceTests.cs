@@ -22,6 +22,7 @@ public sealed class AuthServiceTests
             new FakeJwtTokenGenerator(),
             new FakeRefreshTokenGenerator(),
             refreshTokenRepository,
+            new FakePasswordResetTokenRepository(),
             new FakeUnitOfWork(),
             new JwtOptions { Issuer = "tests", Audience = "tests", Secret = "12345678901234567890123456789012", RefreshTokenLifetimeDays = 14 },
             TimeProvider.System);
@@ -51,6 +52,7 @@ public sealed class AuthServiceTests
             new FakeJwtTokenGenerator(),
             new FakeRefreshTokenGenerator(),
             new FakeRefreshTokenRepository(),
+            new FakePasswordResetTokenRepository(),
             new FakeUnitOfWork(),
             new JwtOptions { Issuer = "tests", Audience = "tests", Secret = "12345678901234567890123456789012", RefreshTokenLifetimeDays = 14 },
             TimeProvider.System);
@@ -72,6 +74,7 @@ public sealed class AuthServiceTests
             new FakeJwtTokenGenerator(),
             new FakeRefreshTokenGenerator(),
             new FakeRefreshTokenRepository(),
+            new FakePasswordResetTokenRepository(),
             new FakeUnitOfWork(),
             new JwtOptions { Issuer = "tests", Audience = "tests", Secret = "12345678901234567890123456789012", RefreshTokenLifetimeDays = 14 },
             TimeProvider.System);
@@ -103,6 +106,7 @@ public sealed class AuthServiceTests
             new FakeJwtTokenGenerator(),
             new FakeRefreshTokenGenerator(),
             refreshTokenRepository,
+            new FakePasswordResetTokenRepository(),
             new FakeUnitOfWork(),
             new JwtOptions { Issuer = "tests", Audience = "tests", Secret = "12345678901234567890123456789012", RefreshTokenLifetimeDays = 14 },
             new FakeTimeProvider(new DateTimeOffset(2026, 1, 2, 0, 0, 0, TimeSpan.Zero)));
@@ -143,6 +147,7 @@ public sealed class AuthServiceTests
             new FakeJwtTokenGenerator(),
             new FakeRefreshTokenGenerator(),
             refreshTokenRepository,
+            new FakePasswordResetTokenRepository(),
             new FakeUnitOfWork(),
             new JwtOptions { Issuer = "tests", Audience = "tests", Secret = "12345678901234567890123456789012", RefreshTokenLifetimeDays = 14 },
             new FakeTimeProvider(new DateTimeOffset(2026, 1, 3, 0, 0, 0, TimeSpan.Zero)));
@@ -173,6 +178,7 @@ public sealed class AuthServiceTests
             new FakeJwtTokenGenerator(),
             new FakeRefreshTokenGenerator(),
             refreshTokenRepository,
+            new FakePasswordResetTokenRepository(),
             new FakeUnitOfWork(),
             new JwtOptions { Issuer = "tests", Audience = "tests", Secret = "12345678901234567890123456789012", RefreshTokenLifetimeDays = 14 },
             new FakeTimeProvider(new DateTimeOffset(2026, 1, 3, 0, 0, 0, TimeSpan.Zero)));
@@ -193,6 +199,7 @@ public sealed class AuthServiceTests
         var originalAuthVersion = user.AuthVersion;
         userRepository.Users.Add(user);
         var refreshTokenRepository = new FakeRefreshTokenRepository();
+        var passwordResetTokenRepository = new FakePasswordResetTokenRepository();
         refreshTokenRepository.RefreshTokens.Add(new TravelPlannerApp.Domain.Entities.RefreshToken
         {
             Id = "rtk-1",
@@ -209,6 +216,7 @@ public sealed class AuthServiceTests
             new FakeJwtTokenGenerator(),
             new FakeRefreshTokenGenerator(),
             refreshTokenRepository,
+            passwordResetTokenRepository,
             new FakeUnitOfWork(),
             new JwtOptions { Issuer = "tests", Audience = "tests", Secret = "12345678901234567890123456789012", RefreshTokenLifetimeDays = 14 },
             new FakeTimeProvider(new DateTimeOffset(2026, 1, 4, 0, 0, 0, TimeSpan.Zero)));
@@ -240,6 +248,7 @@ public sealed class AuthServiceTests
             new FakeJwtTokenGenerator(),
             new FakeRefreshTokenGenerator(),
             new FakeRefreshTokenRepository(),
+            new FakePasswordResetTokenRepository(),
             new FakeUnitOfWork(),
             new JwtOptions { Issuer = "tests", Audience = "tests", Secret = "12345678901234567890123456789012", RefreshTokenLifetimeDays = 14 },
             TimeProvider.System);
@@ -266,6 +275,7 @@ public sealed class AuthServiceTests
             new FakeJwtTokenGenerator(),
             new FakeRefreshTokenGenerator(),
             new FakeRefreshTokenRepository(),
+            new FakePasswordResetTokenRepository(),
             new FakeUnitOfWork(),
             new JwtOptions { Issuer = "tests", Audience = "tests", Secret = "12345678901234567890123456789012", RefreshTokenLifetimeDays = 14 },
             TimeProvider.System);
@@ -276,5 +286,96 @@ public sealed class AuthServiceTests
             NewPassword = "Pass12345!",
             ConfirmNewPassword = "Pass12345!"
         }));
+    }
+
+    [Fact]
+    public async Task RequestPasswordResetAsync_WithKnownEmail_CreatesResetTokenAndRevokesPreviousOnes()
+    {
+        var userRepository = new FakeUserRepository();
+        var user = TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com");
+        userRepository.Users.Add(user);
+        var passwordResetTokenRepository = new FakePasswordResetTokenRepository();
+        passwordResetTokenRepository.Tokens.Add(new TravelPlannerApp.Domain.Entities.PasswordResetToken
+        {
+            Id = "prt-old",
+            UserId = user.Id,
+            TokenHash = "hash::old-token",
+            CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            ExpiresAtUtc = new DateTime(2026, 1, 1, 0, 30, 0, DateTimeKind.Utc)
+        });
+
+        var service = new AuthService(
+            new FakeCurrentUserAccessor(),
+            userRepository,
+            new FakePasswordHasher(),
+            new FakeJwtTokenGenerator(),
+            new FakeRefreshTokenGenerator(),
+            new FakeRefreshTokenRepository(),
+            passwordResetTokenRepository,
+            new FakeUnitOfWork(),
+            new JwtOptions { Issuer = "tests", Audience = "tests", Secret = "12345678901234567890123456789012", RefreshTokenLifetimeDays = 14 },
+            new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 1, 0, 0, TimeSpan.Zero)));
+
+        var response = await service.RequestPasswordResetAsync(new ForgotPasswordRequest
+        {
+            Email = "ava@example.com"
+        });
+
+        Assert.False(string.IsNullOrWhiteSpace(response.DevResetToken));
+        Assert.Equal(2, passwordResetTokenRepository.Tokens.Count);
+        Assert.NotNull(passwordResetTokenRepository.Tokens[0].RevokedAtUtc);
+        Assert.Equal($"hash::{response.DevResetToken}", passwordResetTokenRepository.Tokens[1].TokenHash);
+    }
+
+    [Fact]
+    public async Task ResetPasswordAsync_WithValidToken_UpdatesPasswordAndConsumesResetToken()
+    {
+        var userRepository = new FakeUserRepository();
+        var user = TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com");
+        var originalAuthVersion = user.AuthVersion;
+        userRepository.Users.Add(user);
+        var refreshTokenRepository = new FakeRefreshTokenRepository();
+        refreshTokenRepository.RefreshTokens.Add(new TravelPlannerApp.Domain.Entities.RefreshToken
+        {
+            Id = "rtk-1",
+            UserId = user.Id,
+            TokenHash = "hash::existing-refresh-token-abcdefghijklmnopqrstuvwxyz0123456789",
+            CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            ExpiresAtUtc = new DateTime(2026, 1, 15, 0, 0, 0, DateTimeKind.Utc)
+        });
+        var passwordResetTokenRepository = new FakePasswordResetTokenRepository();
+        passwordResetTokenRepository.Tokens.Add(new TravelPlannerApp.Domain.Entities.PasswordResetToken
+        {
+            Id = "prt-1",
+            UserId = user.Id,
+            TokenHash = "hash::valid-reset-token",
+            CreatedAtUtc = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            ExpiresAtUtc = new DateTime(2026, 1, 1, 0, 30, 0, DateTimeKind.Utc),
+            User = user
+        });
+
+        var service = new AuthService(
+            new FakeCurrentUserAccessor(),
+            userRepository,
+            new FakePasswordHasher(),
+            new FakeJwtTokenGenerator(),
+            new FakeRefreshTokenGenerator(),
+            refreshTokenRepository,
+            passwordResetTokenRepository,
+            new FakeUnitOfWork(),
+            new JwtOptions { Issuer = "tests", Audience = "tests", Secret = "12345678901234567890123456789012", RefreshTokenLifetimeDays = 14 },
+            new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 10, 0, TimeSpan.Zero)));
+
+        await service.ResetPasswordAsync(new ResetPasswordRequest
+        {
+            Token = "valid-reset-token",
+            NewPassword = "ResetPass123!",
+            ConfirmNewPassword = "ResetPass123!"
+        });
+
+        Assert.Equal("hashed::ResetPass123!", user.PasswordHash);
+        Assert.NotEqual(originalAuthVersion, user.AuthVersion);
+        Assert.NotNull(passwordResetTokenRepository.Tokens[0].UsedAtUtc);
+        Assert.NotNull(refreshTokenRepository.RefreshTokens[0].RevokedAtUtc);
     }
 }

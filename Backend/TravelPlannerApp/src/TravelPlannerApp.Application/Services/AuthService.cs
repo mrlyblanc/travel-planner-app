@@ -15,6 +15,7 @@ public sealed class AuthService : IAuthService
     private readonly ICurrentUserAccessor _currentUserAccessor;
     private readonly IUserRepository _userRepository;
     private readonly IRefreshTokenRepository _refreshTokenRepository;
+    private readonly IPasswordResetTokenRepository _passwordResetTokenRepository;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
     private readonly IRefreshTokenGenerator _refreshTokenGenerator;
@@ -29,6 +30,7 @@ public sealed class AuthService : IAuthService
         IJwtTokenGenerator jwtTokenGenerator,
         IRefreshTokenGenerator refreshTokenGenerator,
         IRefreshTokenRepository refreshTokenRepository,
+        IPasswordResetTokenRepository passwordResetTokenRepository,
         IUnitOfWork unitOfWork,
         JwtOptions jwtOptions,
         TimeProvider timeProvider)
@@ -39,6 +41,7 @@ public sealed class AuthService : IAuthService
         _jwtTokenGenerator = jwtTokenGenerator;
         _refreshTokenGenerator = refreshTokenGenerator;
         _refreshTokenRepository = refreshTokenRepository;
+        _passwordResetTokenRepository = passwordResetTokenRepository;
         _unitOfWork = unitOfWork;
         _jwtOptions = jwtOptions;
         _timeProvider = timeProvider;
@@ -102,6 +105,79 @@ public sealed class AuthService : IAuthService
         }
 
         refreshToken.RevokedAtUtc = _timeProvider.GetUtcNow().UtcDateTime;
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<ForgotPasswordResponse> RequestPasswordResetAsync(ForgotPasswordRequest request, CancellationToken cancellationToken = default)
+    {
+        var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+        var user = await _userRepository.GetByEmailAsync(normalizedEmail, cancellationToken);
+        if (user is null)
+        {
+            return new ForgotPasswordResponse(
+                "If that email is registered, a password reset link is ready.",
+                null);
+        }
+
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var existingTokens = await _passwordResetTokenRepository.ListByUserIdAsync(user.Id, cancellationToken);
+        foreach (var existingToken in existingTokens.Where(static token => !token.UsedAtUtc.HasValue && !token.RevokedAtUtc.HasValue))
+        {
+            existingToken.RevokedAtUtc = now;
+        }
+
+        var rawToken = _refreshTokenGenerator.GenerateToken();
+        await _passwordResetTokenRepository.AddAsync(new PasswordResetToken
+        {
+            Id = IdGenerator.New("prt"),
+            UserId = user.Id,
+            TokenHash = _refreshTokenGenerator.HashToken(rawToken),
+            CreatedAtUtc = now,
+            ExpiresAtUtc = now.AddMinutes(30)
+        }, cancellationToken);
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return new ForgotPasswordResponse(
+            "If that email is registered, a password reset link is ready.",
+            rawToken);
+    }
+
+    public async Task ResetPasswordAsync(ResetPasswordRequest request, CancellationToken cancellationToken = default)
+    {
+        var tokenHash = _refreshTokenGenerator.HashToken(request.Token.Trim());
+        var passwordResetToken = await _passwordResetTokenRepository.GetByTokenHashAsync(tokenHash, cancellationToken);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        if (passwordResetToken?.User is null
+            || passwordResetToken.UsedAtUtc.HasValue
+            || passwordResetToken.RevokedAtUtc.HasValue
+            || passwordResetToken.ExpiresAtUtc <= now)
+        {
+            throw new BadRequestException("Reset link is invalid or has expired.");
+        }
+
+        if (_passwordHasher.VerifyHashedPassword(passwordResetToken.User.PasswordHash, request.NewPassword))
+        {
+            throw new BadRequestException("New password must be different from the current password.");
+        }
+
+        passwordResetToken.User.PasswordHash = _passwordHasher.HashPassword(request.NewPassword);
+        passwordResetToken.User.AuthVersion = GenerateAuthVersion();
+        passwordResetToken.UsedAtUtc = now;
+
+        var refreshTokens = await _refreshTokenRepository.ListByUserIdAsync(passwordResetToken.UserId, cancellationToken);
+        foreach (var refreshToken in refreshTokens.Where(static token => !token.RevokedAtUtc.HasValue))
+        {
+            refreshToken.RevokedAtUtc = now;
+        }
+
+        var passwordResetTokens = await _passwordResetTokenRepository.ListByUserIdAsync(passwordResetToken.UserId, cancellationToken);
+        foreach (var otherToken in passwordResetTokens.Where(token => token.Id != passwordResetToken.Id && !token.UsedAtUtc.HasValue && !token.RevokedAtUtc.HasValue))
+        {
+            otherToken.RevokedAtUtc = now;
+        }
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 

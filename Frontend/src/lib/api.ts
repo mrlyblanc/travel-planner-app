@@ -74,6 +74,16 @@ interface ChangePasswordRequest {
   confirmNewPassword: string;
 }
 
+interface ForgotPasswordRequest {
+  email: string;
+}
+
+interface ResetPasswordRequest {
+  token: string;
+  newPassword: string;
+  confirmNewPassword: string;
+}
+
 interface RefreshTokenRequest {
   refreshToken: string;
 }
@@ -84,6 +94,11 @@ interface AuthResponseDto {
   expiresAtUtc: string;
   refreshTokenExpiresAtUtc: string;
   user: UserResponseDto;
+}
+
+interface ForgotPasswordResponseDto {
+  message: string;
+  devResetToken?: string | null;
 }
 
 interface UserLookupResponseDto {
@@ -200,6 +215,11 @@ export interface AuthSession {
   expiresAt: string;
   refreshTokenExpiresAt: string;
   user: User;
+}
+
+export interface ForgotPasswordResponse {
+  message: string;
+  devResetToken: string | null;
 }
 
 interface LegacyAuthSession extends AuthSession {
@@ -625,6 +645,25 @@ export const travelApi = {
     await apiRequest<void>('/auth/change-password', {
       method: 'POST',
       token,
+      body: request,
+    });
+  },
+
+  async forgotPassword(request: ForgotPasswordRequest) {
+    const response = await apiRequest<ForgotPasswordResponseDto>('/auth/forgot-password', {
+      method: 'POST',
+      body: request,
+    });
+
+    return {
+      message: response.data.message,
+      devResetToken: response.data.devResetToken?.trim() || null,
+    } satisfies ForgotPasswordResponse;
+  },
+
+  async resetPassword(request: ResetPasswordRequest) {
+    await apiRequest<void>('/auth/reset-password', {
+      method: 'POST',
       body: request,
     });
   },

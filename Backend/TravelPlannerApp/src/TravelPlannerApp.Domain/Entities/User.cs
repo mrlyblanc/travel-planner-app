@@ -19,4 +19,5 @@ public sealed class User
     public ICollection<EventAuditLog> EventAuditLogs { get; set; } = new List<EventAuditLog>();
     public ICollection<UserNotification> Notifications { get; set; } = new List<UserNotification>();
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
+    public ICollection<PasswordResetToken> PasswordResetTokens { get; set; } = new List<PasswordResetToken>();
 }

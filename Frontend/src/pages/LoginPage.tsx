@@ -1,10 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowRight, KeyRound } from 'lucide-react';
-import { Alert, Box, Button, Divider, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, Divider, Link, Paper, Stack, TextField, Typography } from '@mui/material';
 import { styled } from '@mui/material/styles';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link as RouterLink, useLocation, useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 import { useToast } from '../app/providers/ToastProvider';
 import { useTravelStore } from '../app/store/useTravelStore';
@@ -133,6 +133,12 @@ export const LoginPage = () => {
             type="password"
             {...register('password')}
           />
+
+          <Box display="flex" justifyContent="flex-end" mt={-0.5}>
+            <Link component={RouterLink} to="/forgot-password" underline="hover" variant="body2">
+              Forgot password?
+            </Link>
+          </Box>
 
           <Button endIcon={<ArrowRight size={16} />} size="large" type="submit" variant="contained">
             {isBootstrapping ? 'Signing in...' : 'Sign in'}

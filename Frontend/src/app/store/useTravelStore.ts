@@ -8,6 +8,7 @@ import {
   type EventInputDto,
   type ItineraryInputDto,
   type UserRealtimeNotification,
+  type ForgotPasswordResponse,
 } from '../../lib/api';
 import { itineraryRealtimeClient } from '../../lib/realtime';
 import type { EventAuditLog, ItineraryEvent } from '../../types/event';
@@ -28,6 +29,16 @@ export interface RegisterInput {
 
 export interface ChangePasswordInput {
   currentPassword: string;
+  newPassword: string;
+  confirmNewPassword: string;
+}
+
+export interface ForgotPasswordInput {
+  email: string;
+}
+
+export interface ResetPasswordInput {
+  token: string;
   newPassword: string;
   confirmNewPassword: string;
 }
@@ -53,6 +64,8 @@ interface TravelState {
   bootstrap: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
+  forgotPassword: (input: ForgotPasswordInput) => Promise<ForgotPasswordResponse>;
+  resetPassword: (input: ResetPasswordInput) => Promise<void>;
   changePassword: (input: ChangePasswordInput) => Promise<void>;
   logout: () => Promise<void>;
   refreshAll: () => Promise<void>;
@@ -518,6 +531,53 @@ export const useTravelStore = create<TravelState>((set, get) => {
       const message = error instanceof Error ? error.message : 'Unable to create your account.';
       set({
         ...emptyDataState,
+        isBootstrapping: false,
+        isReady: true,
+        error: message,
+      });
+      throw error;
+    }
+  },
+
+  forgotPassword: async (input) => {
+    set({ isBootstrapping: true, error: null });
+
+    try {
+      const response = await travelApi.forgotPassword({
+        email: input.email,
+      });
+
+      set({
+        isBootstrapping: false,
+        isReady: true,
+        error: null,
+      });
+
+      return response;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to start password reset.';
+      set({
+        isBootstrapping: false,
+        isReady: true,
+        error: message,
+      });
+      throw error;
+    }
+  },
+
+  resetPassword: async (input) => {
+    set({ isBootstrapping: true, error: null });
+
+    try {
+      await travelApi.resetPassword(input);
+      set({
+        isBootstrapping: false,
+        isReady: true,
+        error: null,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to reset password.';
+      set({
         isBootstrapping: false,
         isReady: true,
         error: message,

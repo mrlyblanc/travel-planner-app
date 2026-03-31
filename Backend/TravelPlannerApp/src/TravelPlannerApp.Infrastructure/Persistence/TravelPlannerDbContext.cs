@@ -13,6 +13,7 @@ public sealed class TravelPlannerDbContext : DbContext, IUnitOfWork
 
     public DbSet<User> Users => Set<User>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+    public DbSet<PasswordResetToken> PasswordResetTokens => Set<PasswordResetToken>();
     public DbSet<Itinerary> Itineraries => Set<Itinerary>();
     public DbSet<ItineraryMember> ItineraryMembers => Set<ItineraryMember>();
     public DbSet<Event> Events => Set<Event>();
@@ -62,6 +63,21 @@ public sealed class TravelPlannerDbContext : DbContext, IUnitOfWork
             entity.HasOne(refreshToken => refreshToken.User)
                 .WithMany(user => user.RefreshTokens)
                 .HasForeignKey(refreshToken => refreshToken.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PasswordResetToken>(entity =>
+        {
+            entity.ToTable("password_reset_tokens");
+            entity.HasKey(token => token.Id);
+            entity.Property(token => token.Id).HasMaxLength(80);
+            entity.Property(token => token.UserId).HasMaxLength(80).IsRequired();
+            entity.Property(token => token.TokenHash).HasMaxLength(128).IsRequired();
+            entity.HasIndex(token => token.TokenHash).IsUnique();
+            entity.HasIndex(token => new { token.UserId, token.ExpiresAtUtc });
+            entity.HasOne(token => token.User)
+                .WithMany(user => user.PasswordResetTokens)
+                .HasForeignKey(token => token.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
