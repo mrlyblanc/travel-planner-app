@@ -214,8 +214,10 @@ public sealed class TravelPlannerDbSeeder
                 ItineraryId = "itinerary-tokyo",
                 Title = "Shibuya Food Walk",
                 Description = "Izakaya crawl and late ramen stop.",
+                Remarks = "Aim for the first reservation slot so the crossing is still lively after dinner.",
                 Category = EventCategory.Restaurant,
                 Color = "#F97316",
+                IsAllDay = false,
                 StartDateTimeLocal = new DateTime(2026, 4, 15, 18, 0, 0, DateTimeKind.Unspecified),
                 EndDateTimeLocal = new DateTime(2026, 4, 15, 21, 30, 0, DateTimeKind.Unspecified),
                 Timezone = "Asia/Tokyo",
@@ -228,7 +230,12 @@ public sealed class TravelPlannerDbSeeder
                 CreatedById = "user-ava",
                 UpdatedById = "user-luca",
                 CreatedAtUtc = createdAt,
-                UpdatedAtUtc = createdAt.AddHours(2)
+                UpdatedAtUtc = createdAt.AddHours(2),
+                Links =
+                [
+                    new EventLink { Id = "lnk-tokyo-1", Description = "Reservation page", Url = "https://example.com/shibuya-food-walk", SortOrder = 0 },
+                    new EventLink { Id = "lnk-tokyo-2", Description = "Meeting point map", Url = "https://maps.example.com/shibuya-food-walk", SortOrder = 1 }
+                ]
             },
             new Event
             {
@@ -237,8 +244,10 @@ public sealed class TravelPlannerDbSeeder
                 ItineraryId = "itinerary-seoul",
                 Title = "DDP Night Visit",
                 Description = "Evening architecture walk and exhibit pass.",
+                Remarks = "Buy the exhibit pass online before noon to avoid the evening queue.",
                 Category = EventCategory.Landmark,
                 Color = "#0F766E",
+                IsAllDay = false,
                 StartDateTimeLocal = new DateTime(2026, 5, 5, 19, 0, 0, DateTimeKind.Unspecified),
                 EndDateTimeLocal = new DateTime(2026, 5, 5, 21, 0, 0, DateTimeKind.Unspecified),
                 Timezone = "Asia/Seoul",
@@ -251,7 +260,11 @@ public sealed class TravelPlannerDbSeeder
                 CreatedById = "user-luca",
                 UpdatedById = "user-luca",
                 CreatedAtUtc = createdAt.AddDays(1),
-                UpdatedAtUtc = createdAt.AddDays(1)
+                UpdatedAtUtc = createdAt.AddDays(1),
+                Links =
+                [
+                    new EventLink { Id = "lnk-seoul-1", Description = "Exhibit tickets", Url = "https://example.com/ddp-tickets", SortOrder = 0 }
+                ]
             },
             new Event
             {
@@ -260,8 +273,10 @@ public sealed class TravelPlannerDbSeeder
                 ItineraryId = "itinerary-singapore",
                 Title = "Gardens by the Bay",
                 Description = "Cloud Forest in the afternoon.",
+                Remarks = "Keep a light jacket for the cooled conservatory.",
                 Category = EventCategory.Activity,
                 Color = "#16A34A",
+                IsAllDay = false,
                 StartDateTimeLocal = new DateTime(2026, 6, 13, 14, 0, 0, DateTimeKind.Unspecified),
                 EndDateTimeLocal = new DateTime(2026, 6, 13, 17, 0, 0, DateTimeKind.Unspecified),
                 Timezone = "Asia/Singapore",
@@ -274,7 +289,11 @@ public sealed class TravelPlannerDbSeeder
                 CreatedById = "user-ava",
                 UpdatedById = "user-ava",
                 CreatedAtUtc = createdAt.AddDays(2),
-                UpdatedAtUtc = createdAt.AddDays(2)
+                UpdatedAtUtc = createdAt.AddDays(2),
+                Links =
+                [
+                    new EventLink { Id = "lnk-singapore-1", Description = "Attraction details", Url = "https://example.com/gardens-by-the-bay", SortOrder = 0 }
+                ]
             }
         ];
     }

@@ -17,6 +17,7 @@ public sealed class EventRepository : IEventRepository
     {
         return _dbContext.Events
             .AsNoTracking()
+            .Include(eventEntity => eventEntity.Links)
             .Where(eventEntity => eventEntity.ItineraryId == itineraryId)
             .ToListAsync(cancellationToken);
     }
@@ -24,6 +25,7 @@ public sealed class EventRepository : IEventRepository
     public Task<Event?> GetByIdAsync(string eventId, CancellationToken cancellationToken = default)
     {
         return _dbContext.Events
+            .Include(eventEntity => eventEntity.Links)
             .FirstOrDefaultAsync(eventEntity => eventEntity.Id == eventId, cancellationToken);
     }
 

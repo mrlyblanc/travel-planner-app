@@ -56,8 +56,10 @@ public static class ResponseMappings
             eventEntity.ItineraryId,
             eventEntity.Title,
             eventEntity.Description,
+            eventEntity.Remarks,
             eventEntity.Category,
             eventEntity.Color,
+            eventEntity.IsAllDay,
             eventEntity.StartDateTimeLocal,
             eventEntity.EndDateTimeLocal,
             eventEntity.Timezone,
@@ -67,6 +69,11 @@ public static class ResponseMappings
             eventEntity.LocationLng,
             eventEntity.Cost,
             eventEntity.CurrencyCode,
+            eventEntity.Links
+                .OrderBy(static link => link.SortOrder)
+                .ThenBy(static link => link.Id, StringComparer.Ordinal)
+                .Select(static link => link.ToResponse())
+                .ToList(),
             eventEntity.CreatedById,
             eventEntity.UpdatedById,
             eventEntity.CreatedAtUtc,
@@ -80,8 +87,10 @@ public static class ResponseMappings
             eventEntity.ItineraryId,
             eventEntity.Title,
             eventEntity.Description,
+            eventEntity.Remarks,
             eventEntity.Category,
             eventEntity.Color,
+            eventEntity.IsAllDay,
             eventEntity.StartDateTimeLocal,
             eventEntity.EndDateTimeLocal,
             eventEntity.Timezone,
@@ -91,8 +100,18 @@ public static class ResponseMappings
             eventEntity.LocationLng,
             eventEntity.Cost,
             eventEntity.CurrencyCode,
+            eventEntity.Links
+                .OrderBy(static link => link.SortOrder)
+                .ThenBy(static link => link.Id, StringComparer.Ordinal)
+                .Select(static link => link.ToResponse())
+                .ToList(),
             eventEntity.UpdatedById,
             eventEntity.UpdatedAtUtc);
+    }
+
+    public static EventLinkResponse ToResponse(this EventLink link)
+    {
+        return new EventLinkResponse(link.Id, link.Description, link.Url);
     }
 
     public static EventAuditLogResponse ToResponse(this EventAuditLog log)

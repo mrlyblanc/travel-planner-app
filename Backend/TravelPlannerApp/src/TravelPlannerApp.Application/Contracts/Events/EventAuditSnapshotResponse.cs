@@ -7,8 +7,10 @@ public sealed record EventAuditSnapshotResponse(
     string ItineraryId,
     string Title,
     string? Description,
+    string? Remarks,
     EventCategory Category,
     string? Color,
+    bool IsAllDay,
     DateTime StartDateTime,
     DateTime EndDateTime,
     string Timezone,
@@ -18,5 +20,6 @@ public sealed record EventAuditSnapshotResponse(
     decimal? LocationLng,
     decimal? Cost,
     string? CurrencyCode,
+    IReadOnlyList<EventLinkResponse> Links,
     string UpdatedById,
     DateTime UpdatedAtUtc);

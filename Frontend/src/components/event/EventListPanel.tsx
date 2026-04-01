@@ -14,7 +14,7 @@ import {
 } from '@mui/material';
 import { useMemo, useState } from 'react';
 import { formatCurrencyAmount } from '../../lib/currency';
-import { formatDateTime } from '../../lib/date';
+import { formatEventSchedule } from '../../lib/date';
 import type { ItineraryEvent } from '../../types/event';
 import type { User } from '../../types/user';
 import { EmptyState } from '../common/EmptyState';
@@ -38,7 +38,13 @@ export const EventListPanel = ({ events, usersMap, selectedEventId, onSelectEven
     }
 
     return events.filter((event) =>
-      [event.title, event.location, event.description].some((value) => value.toLowerCase().includes(loweredQuery)),
+      [
+        event.title,
+        event.location,
+        event.description,
+        event.remarks,
+        ...event.links.map((link) => `${link.description} ${link.url}`),
+      ].some((value) => value.toLowerCase().includes(loweredQuery)),
     );
   }, [events, query]);
 
@@ -111,11 +117,16 @@ export const EventListPanel = ({ events, usersMap, selectedEventId, onSelectEven
                       secondary={
                         <Stack mt={1} spacing={0.6}>
                           <Typography color="text.secondary" variant="caption">
-                            {formatDateTime(event.startDateTime)}
+                            {formatEventSchedule(event)}
                           </Typography>
                           <Typography color="text.secondary" variant="caption">
                             {event.location}
                           </Typography>
+                          {event.remarks ? (
+                            <Typography color="text.secondary" variant="caption">
+                              {event.remarks}
+                            </Typography>
+                          ) : null}
                           <Typography color="text.secondary" variant="caption">
                             {formatCurrencyAmount(event.cost, event.currencyCode)} • Updated by {usersMap[event.updatedBy]?.name ?? 'Unknown'}
                           </Typography>

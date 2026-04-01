@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { CalendarClock, MapPinned, Trash2, UserRound } from 'lucide-react';
+import { CalendarClock, Check, Edit3, Link2, MapPinned, Plus, Trash2, UserRound } from 'lucide-react';
 import {
   Alert,
   alpha,
@@ -7,12 +7,14 @@ import {
   Avatar,
   Box,
   Button,
+  Checkbox,
   Divider,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   Drawer,
+  FormControlLabel,
   IconButton,
   MenuItem,
   Tooltip,
@@ -22,7 +24,7 @@ import {
   useTheme,
 } from '@mui/material';
 import { DatePicker, TimePicker } from '@mui/x-date-pickers';
-import { Controller, useForm, useWatch, type Resolver } from 'react-hook-form';
+import { Controller, useFieldArray, useForm, useWatch, type Resolver } from 'react-hook-form';
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import type { Dayjs } from 'dayjs';
 import { z } from 'zod';
@@ -39,7 +41,15 @@ import {
   roundCurrencyAmount,
   supportedCurrencies,
 } from '../../lib/currency';
-import { dayjs, formatDateTime } from '../../lib/date';
+import {
+  buildAllDayDateTimeRange,
+  buildCurrentFallbackTimeRange,
+  combineDateAndTime,
+  DEFAULT_TIMED_SLOT_MINUTES,
+  dayjs,
+  formatDateTime,
+  formatEventSchedule,
+} from '../../lib/date';
 import {
   eventCategoryOptions,
   findEventConflicts,
@@ -61,7 +71,7 @@ interface EventDrawerProps {
   event: ItineraryEvent | null;
   existingEvents: ItineraryEvent[];
   auditHistory: EventAuditLog[];
-  draftRange: { start: string; end: string } | null;
+  draftRange: { start: string; end: string; allDay: boolean } | null;
   usersMap: Record<string, User>;
   canManage: boolean;
   canDelete: boolean;
@@ -71,22 +81,35 @@ interface EventDrawerProps {
   onDelete: (eventId: string) => Promise<void> | void;
 }
 
+const eventLinkSchema = z.object({
+  description: z.string().trim().min(2, 'Link description is required').max(160, 'Keep link descriptions under 160 characters'),
+  url: z
+    .string()
+    .trim()
+    .url('Enter a valid link')
+    .refine((value) => /^https?:\/\//i.test(value), 'Links must start with http:// or https://'),
+});
+
+const dayjsField = z.custom<Dayjs | null>((value) => value === null || dayjs.isDayjs(value));
+
 const eventSchema = z
   .object({
-    title: z.string().min(2, 'Title is required'),
-    description: z.string().min(2, 'Description is required'),
+    title: z.string().trim().min(2, 'Title is required').max(160, 'Keep titles under 160 characters'),
+    description: z.string().trim().min(2, 'Description is required').max(4000, 'Keep descriptions under 4000 characters'),
+    remarks: z.string().trim().max(4000, 'Keep remarks under 4000 characters'),
     category: z
       .string()
       .min(1, 'Category is required')
       .refine((value) => eventCategoryOptions.includes(value as EventCategory), 'Category is required'),
-    color: z.string().min(4, 'Color is required'),
-    startDate: z.custom<Dayjs | null>((value) => Boolean(value), 'Start date is required'),
-    startTime: z.custom<Dayjs | null>((value) => Boolean(value), 'Start time is required'),
-    endDate: z.custom<Dayjs | null>((value) => Boolean(value), 'End date is required'),
-    endTime: z.custom<Dayjs | null>((value) => Boolean(value), 'End time is required'),
-    timezone: z.string().min(1, 'Timezone is required'),
-    location: z.string().min(2, 'Location is required'),
-    locationAddress: z.string(),
+    color: z.string().trim().min(4, 'Color is required'),
+    isAllDay: z.boolean(),
+    startDate: dayjsField,
+    startTime: dayjsField,
+    endDate: dayjsField,
+    endTime: dayjsField,
+    timezone: z.string().trim().min(1, 'Timezone is required'),
+    location: z.string().trim().min(2, 'Location is required').max(200, 'Keep locations under 200 characters'),
+    locationAddress: z.string().trim().max(400, 'Keep addresses under 400 characters'),
     locationLat: z.number().nullable(),
     locationLng: z.number().nullable(),
     currencyCode: z.string(),
@@ -104,24 +127,64 @@ const eventSchema = z
       },
       z.number().min(0, 'Cost cannot be negative'),
     ),
+    links: z.array(eventLinkSchema).max(12, 'You can add up to 12 links to an event'),
   })
-  .refine(
-    (values) => {
-      if (!values.startDate || !values.startTime || !values.endDate || !values.endTime) {
-        return true;
+  .superRefine((values, context) => {
+    if (!values.startDate) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Start date is required',
+        path: ['startDate'],
+      });
+    }
+
+    if (!values.endDate) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'End date is required',
+        path: ['endDate'],
+      });
+    }
+
+    if (values.startDate && values.endDate && values.endDate.startOf('day').isBefore(values.startDate.startOf('day'))) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'End date must be on or after the start date',
+        path: ['endDate'],
+      });
+    }
+
+    if (values.startDate && values.endDate && !values.isAllDay) {
+      if (!values.startTime) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Start time is required',
+          path: ['startTime'],
+        });
       }
 
-      const startDateTime = combineDateAndTime(values.startDate, values.startTime);
-      const endDateTime = combineDateAndTime(values.endDate, values.endTime);
+      if (!values.endTime) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'End time is required',
+          path: ['endTime'],
+        });
+      }
 
-      return startDateTime !== null && endDateTime !== null && endDateTime.isAfter(startDateTime);
-    },
-    {
-      message: 'End time must be after the start time',
-      path: ['endTime'],
-    },
-  )
-  .superRefine((values, context) => {
+      if (values.startTime && values.endTime) {
+        const startDateTime = combineDateAndTime(values.startDate, values.startTime);
+        const endDateTime = combineDateAndTime(values.endDate, values.endTime);
+
+        if (!startDateTime || !endDateTime || !endDateTime.isAfter(startDateTime)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'End date and time must be after the start date and time',
+            path: ['endTime'],
+          });
+        }
+      }
+    }
+
     if (values.cost > 0 && !normalizeCurrencyCode(values.currencyCode)) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
@@ -145,8 +208,10 @@ type ParsedEventFormValues = z.output<typeof eventSchema>;
 interface EventFormValues {
   title: string;
   description: string;
+  remarks: string;
   category: EventCategory | '';
   color: string;
+  isAllDay: boolean;
   startDate: Dayjs | null;
   startTime: Dayjs | null;
   endDate: Dayjs | null;
@@ -158,17 +223,54 @@ interface EventFormValues {
   locationLng: number | null;
   currencyCode: string;
   cost: string;
+  links: Array<{
+    description: string;
+    url: string;
+  }>;
 }
 
-const combineDateAndTime = (dateValue: Dayjs | null, timeValue: Dayjs | null) => {
-  if (!dateValue || !timeValue) {
+const emptyLink = () => ({
+  description: '',
+  url: '',
+});
+
+const scheduleFieldTextFieldProps = {
+  fullWidth: true,
+  sx: {
+    flex: 1,
+    '& input': { fontSize: '0.8rem' },
+  },
+} as const;
+
+const buildFormDateRange = ({
+  isAllDay,
+  startDate,
+  startTime,
+  endDate,
+  endTime,
+}: Pick<EventFormValues, 'isAllDay' | 'startDate' | 'startTime' | 'endDate' | 'endTime'>) => {
+  if (!startDate || !endDate) {
     return null;
   }
 
-  return dateValue.hour(timeValue.hour()).minute(timeValue.minute()).second(0).millisecond(0);
+  if (isAllDay) {
+    return buildAllDayDateTimeRange(startDate, endDate);
+  }
+
+  const startDateTime = combineDateAndTime(startDate, startTime);
+  const endDateTime = combineDateAndTime(endDate, endTime);
+
+  if (!startDateTime || !endDateTime || !endDateTime.isAfter(startDateTime)) {
+    return null;
+  }
+
+  return {
+    startDateTime: startDateTime.format(),
+    endDateTime: endDateTime.format(),
+  };
 };
 
-const buildDraftRangeValues = (draftRange: { start: string; end: string } | null) => {
+const buildDraftRangeValues = (draftRange: { start: string; end: string; allDay: boolean } | null) => {
   if (!draftRange) {
     return null;
   }
@@ -180,53 +282,56 @@ const buildDraftRangeValues = (draftRange: { start: string; end: string } | null
     return null;
   }
 
-  const hasExplicitTime = draftRange.start.includes('T') || draftRange.end.includes('T');
-
-  if (!hasExplicitTime) {
+  if (draftRange.allDay) {
     const startDate = startDateTime.startOf('day');
-    const inclusiveEndDate = parsedEndDateTime.isValid()
+    const endDate = parsedEndDateTime.isValid() && parsedEndDateTime.isAfter(startDateTime)
       ? parsedEndDateTime.subtract(1, 'day').startOf('day')
       : startDate;
-    const endDate = inclusiveEndDate.isBefore(startDate, 'day') ? startDate : inclusiveEndDate;
 
     return {
+      isAllDay: true,
       startDate,
-      startTime: startDate.hour(9).minute(0),
+      startTime: null,
       endDate,
-      endTime: endDate.hour(10).minute(0),
+      endTime: null,
     };
   }
 
   const endDateTime = parsedEndDateTime.isValid() && parsedEndDateTime.isAfter(startDateTime)
     ? parsedEndDateTime
-    : startDateTime.add(1, 'hour');
+    : startDateTime.add(DEFAULT_TIMED_SLOT_MINUTES, 'minute');
+  const startDate = startDateTime.startOf('day');
 
   return {
-    startDate: startDateTime,
+    isAllDay: false,
+    startDate,
     startTime: startDateTime,
-    endDate: endDateTime,
+    endDate: endDateTime.startOf('day'),
     endTime: endDateTime,
   };
 };
 
 const buildDefaultValues = (
-  _itinerary: Itinerary,
   event: ItineraryEvent | null,
-  draftRange: { start: string; end: string } | null,
+  draftRange: { start: string; end: string; allDay: boolean } | null,
 ): EventFormValues => {
   if (event) {
     const startDateTime = dayjs(event.startDateTime);
     const endDateTime = dayjs(event.endDateTime);
+    const startDate = startDateTime.startOf('day');
+    const endDate = endDateTime.startOf('day');
 
     return {
       title: event.title,
       description: event.description,
+      remarks: event.remarks,
       category: event.category,
       color: normalizeEventColor(event.color),
-      startDate: startDateTime,
-      startTime: startDateTime,
-      endDate: endDateTime,
-      endTime: endDateTime,
+      isAllDay: event.isAllDay,
+      startDate,
+      startTime: event.isAllDay ? null : startDateTime,
+      endDate,
+      endTime: event.isAllDay ? null : endDateTime,
       timezone: event.timezone,
       location: event.location,
       locationAddress: event.locationAddress,
@@ -234,6 +339,10 @@ const buildDefaultValues = (
       locationLng: event.locationLng,
       currencyCode: event.currencyCode ?? '',
       cost: formatEditableCurrencyAmount(event.cost, event.currencyCode),
+      links: event.links.map((link) => ({
+        description: link.description,
+        url: link.url,
+      })),
     };
   }
 
@@ -242,8 +351,10 @@ const buildDefaultValues = (
     return {
       title: '',
       description: '',
+      remarks: '',
       category: '',
       color: '',
+      isAllDay: draftRangeValues.isAllDay,
       startDate: draftRangeValues.startDate,
       startTime: draftRangeValues.startTime,
       endDate: draftRangeValues.endDate,
@@ -255,14 +366,17 @@ const buildDefaultValues = (
       locationLng: null,
       currencyCode: '',
       cost: '',
+      links: [],
     };
   }
 
   return {
     title: '',
     description: '',
+    remarks: '',
     category: '',
     color: '',
+    isAllDay: false,
     startDate: null,
     startTime: null,
     endDate: null,
@@ -274,6 +388,7 @@ const buildDefaultValues = (
     locationLng: null,
     currencyCode: '',
     cost: '',
+    links: [],
   };
 };
 
@@ -299,7 +414,9 @@ export const EventDrawer = ({
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [showFullAuditHistory, setShowFullAuditHistory] = useState(false);
-  const defaultValues = useMemo(() => buildDefaultValues(itinerary, event, draftRange), [draftRange, event, itinerary]);
+  const [editingLinkIds, setEditingLinkIds] = useState<string[]>([]);
+  const [pendingNewLinkEdit, setPendingNewLinkEdit] = useState(false);
+  const defaultValues = useMemo(() => buildDefaultValues(event, draftRange), [draftRange, event]);
 
   const {
     control,
@@ -308,16 +425,31 @@ export const EventDrawer = ({
     reset,
     watch,
     setValue,
+    trigger,
     formState: { errors, isSubmitting },
   } = useForm<EventFormValues>({
     resolver: zodResolver(eventSchema) as unknown as Resolver<EventFormValues>,
     defaultValues,
   });
 
-  const locationAddress = watch('locationAddress');
-  const [selectedCategoryValue, selectedColorValue, startDateValue, startTimeValue, endDateValue, endTimeValue, selectedCurrencyCode] = useWatch({
+  const { fields: linkFields, append: appendLink, remove: removeLink } = useFieldArray({
     control,
-    name: ['category', 'color', 'startDate', 'startTime', 'endDate', 'endTime', 'currencyCode'],
+    name: 'links',
+  });
+
+  const locationAddress = watch('locationAddress');
+  const [
+    selectedCategoryValue,
+    selectedColorValue,
+    isAllDayValue,
+    startDateValue,
+    startTimeValue,
+    endDateValue,
+    endTimeValue,
+    selectedCurrencyCode,
+  ] = useWatch({
+    control,
+    name: ['category', 'color', 'isAllDay', 'startDate', 'startTime', 'endDate', 'endTime', 'currencyCode'],
   });
   const selectedCurrencyOption = useMemo(() => getCurrencyOption(selectedCurrencyCode), [selectedCurrencyCode]);
   const headerChipCategory = useMemo(() => {
@@ -336,24 +468,31 @@ export const EventDrawer = ({
     return event.updatedBy !== event.createdBy || event.updatedAt !== event.createdAt;
   }, [event]);
   const conflictingEvents = useMemo(() => {
-    const startDateTime = combineDateAndTime(startDateValue, startTimeValue);
-    const endDateTime = combineDateAndTime(endDateValue, endTimeValue);
+    const range = buildFormDateRange({
+      isAllDay: isAllDayValue,
+      startDate: startDateValue,
+      startTime: startTimeValue,
+      endDate: endDateValue,
+      endTime: endTimeValue,
+    });
 
-    if (!startDateTime || !endDateTime || !endDateTime.isAfter(startDateTime)) {
+    if (!range) {
       return [];
     }
 
     return findEventConflicts({
       events: existingEvents,
-      startDateTime: startDateTime.format(),
-      endDateTime: endDateTime.format(),
+      startDateTime: range.startDateTime,
+      endDateTime: range.endDateTime,
       excludeEventId: event?.id,
     });
-  }, [endDateValue, endTimeValue, event?.id, existingEvents, startDateValue, startTimeValue]);
+  }, [endDateValue, endTimeValue, event?.id, existingEvents, isAllDayValue, startDateValue, startTimeValue]);
 
   useLayoutEffect(() => {
     reset(defaultValues);
     setLocationInput(defaultValues.location);
+    setEditingLinkIds([]);
+    setPendingNewLinkEdit(false);
   }, [defaultValues, reset]);
 
   useEffect(() => {
@@ -362,8 +501,24 @@ export const EventDrawer = ({
       setIsDeleting(false);
       setIsSearchingLocations(false);
       setShowFullAuditHistory(false);
+      setEditingLinkIds([]);
+      setPendingNewLinkEdit(false);
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!pendingNewLinkEdit || linkFields.length === 0) {
+      return;
+    }
+
+    const newestLinkId = linkFields[linkFields.length - 1]?.id;
+    if (!newestLinkId) {
+      return;
+    }
+
+    setEditingLinkIds((current) => (current.includes(newestLinkId) ? current : [...current, newestLinkId]));
+    setPendingNewLinkEdit(false);
+  }, [linkFields, pendingNewLinkEdit]);
 
   useEffect(() => {
     if (!open || !event) {
@@ -408,6 +563,38 @@ export const EventDrawer = ({
     };
   }, [locationInput, open]);
 
+  useEffect(() => {
+    if (!startDateValue) {
+      return;
+    }
+
+    if (!endDateValue || endDateValue.isBefore(startDateValue, 'day')) {
+      setValue('endDate', startDateValue, { shouldValidate: false, shouldDirty: false });
+    }
+  }, [endDateValue, setValue, startDateValue]);
+
+  useEffect(() => {
+    if (!open || isAllDayValue) {
+      return;
+    }
+
+    if (startDateValue && (!startTimeValue || !endTimeValue)) {
+      const fallbackTimes = buildCurrentFallbackTimeRange(startDateValue, endDateValue ?? startDateValue);
+
+      if (!startTimeValue) {
+        setValue('startTime', fallbackTimes.startTime, { shouldValidate: true });
+      }
+
+      if (!endTimeValue) {
+        setValue('endTime', fallbackTimes.endTime, { shouldValidate: true });
+      }
+
+      if (endDateValue && fallbackTimes.endDate.isAfter(endDateValue, 'day')) {
+        setValue('endDate', fallbackTimes.endDate, { shouldValidate: true });
+      }
+    }
+  }, [endDateValue, endTimeValue, isAllDayValue, open, setValue, startDateValue, startTimeValue]);
+
   return (
     <>
       <Drawer
@@ -446,28 +633,33 @@ export const EventDrawer = ({
             sx={{ overflowY: 'auto', pr: 0.5 }}
             onSubmit={handleSubmit(async (values) => {
               const parsedValues = eventSchema.parse(values) as ParsedEventFormValues;
-              const startDateTime = combineDateAndTime(parsedValues.startDate, parsedValues.startTime);
-              const endDateTime = combineDateAndTime(parsedValues.endDate, parsedValues.endTime);
+              const dateRange = buildFormDateRange(parsedValues);
 
-              if (!startDateTime || !endDateTime) {
+              if (!dateRange) {
                 return;
               }
 
               await onSave(
                 {
-                  title: parsedValues.title,
-                  description: parsedValues.description,
+                  title: parsedValues.title.trim(),
+                  description: parsedValues.description.trim(),
+                  remarks: parsedValues.remarks.trim(),
                   category: parsedValues.category as EventCategory,
                   color: normalizeEventColor(parsedValues.color),
-                  startDateTime: startDateTime.format(),
-                  endDateTime: endDateTime.format(),
+                  isAllDay: parsedValues.isAllDay,
+                  startDateTime: dateRange.startDateTime,
+                  endDateTime: dateRange.endDateTime,
                   timezone: parsedValues.timezone,
-                  location: parsedValues.location,
-                  locationAddress: parsedValues.locationAddress,
+                  location: parsedValues.location.trim(),
+                  locationAddress: parsedValues.locationAddress.trim(),
                   locationLat: parsedValues.locationLat,
                   locationLng: parsedValues.locationLng,
                   currencyCode: normalizeCurrencyCode(parsedValues.currencyCode),
                   cost: roundCurrencyAmount(parsedValues.cost, parsedValues.currencyCode),
+                  links: parsedValues.links.map((link) => ({
+                    description: link.description.trim(),
+                    url: link.url.trim(),
+                  })),
                 },
                 event?.id,
               );
@@ -494,218 +686,246 @@ export const EventDrawer = ({
               {...register('description')}
             />
 
-          <Controller
-            control={control}
-            name="category"
-            render={({ field }) => (
-              <TextField
-                disabled={!canManage}
-                error={Boolean(errors.category)}
-                helperText={errors.category?.message ?? 'Choose the stop type so the calendar and trip cost summary stay organized.'}
-                label="Category"
-                onChange={field.onChange}
-                select
-                slotProps={{
-                  inputLabel: { shrink: true },
-                  select: {
-                    displayEmpty: true,
-                    renderValue: (value) => {
-                      const selectedValue = typeof value === 'string' ? value : '';
+            <TextField
+              disabled={!canManage}
+              error={Boolean(errors.remarks)}
+              helperText={errors.remarks?.message ?? 'Use remarks for internal reminders, follow-ups, or extra trip context that may help later.'}
+              label="Remarks"
+              minRows={2}
+              multiline
+              placeholder="Bring passport copies, confirm gate details again in the morning, and keep lounge vouchers handy."
+              {...register('remarks')}
+            />
 
-                      return selectedValue ? (
-                        selectedValue
-                      ) : (
-                        <Typography color="text.secondary" variant="body2">
-                          Select category
-                        </Typography>
-                      );
+            <Controller
+              control={control}
+              name="category"
+              render={({ field }) => (
+                <TextField
+                  disabled={!canManage}
+                  error={Boolean(errors.category)}
+                  helperText={errors.category?.message ?? 'Choose the stop type so the calendar and trip cost summary stay organized.'}
+                  label="Category"
+                  onChange={field.onChange}
+                  select
+                  slotProps={{
+                    inputLabel: { shrink: true },
+                    select: {
+                      displayEmpty: true,
+                      renderValue: (value) => {
+                        const selectedValue = typeof value === 'string' ? value : '';
+
+                        return selectedValue ? (
+                          selectedValue
+                        ) : (
+                          <Typography color="text.secondary" variant="body2">
+                            Select category
+                          </Typography>
+                        );
+                      },
                     },
-                  },
-                }}
-                value={field.value || ''}
-              >
-                <MenuItem disabled value="">
-                  Select category
-                </MenuItem>
-                {eventCategoryOptions.map((category) => (
-                  <MenuItem key={category} value={category}>
-                    {category}
+                  }}
+                  value={field.value || ''}
+                >
+                  <MenuItem disabled value="">
+                    Select category
                   </MenuItem>
-                ))}
-              </TextField>
-            )}
-          />
-
-          <Controller
-            control={control}
-            name="color"
-            render={({ field }) => (
-              <Box>
-                <Typography gutterBottom fontWeight={600} variant="body2">
-                  Calendar color
-                </Typography>
-                <Stack direction="row" flexWrap="wrap" gap={1}>
-                  {getEventColorOptions(field.value).map((color) => {
-                    const isSelected = Boolean(field.value) && normalizeEventColor(field.value) === normalizeEventColor(color);
-                    const textColor = getEventTextColor(color);
-
-                    return (
-                      <Tooltip key={color} title={color}>
-                        <Button
-                          disabled={!canManage}
-                          onClick={() => field.onChange(color)}
-                          sx={{
-                            minWidth: 0,
-                            width: 42,
-                            height: 42,
-                            borderRadius: '50%',
-                            bgcolor: color,
-                            color: textColor,
-                            border: isSelected
-                              ? `3px solid ${theme.palette.mode === 'light' ? 'rgba(22, 48, 75, 0.9)' : 'rgba(237, 245, 255, 0.92)'}`
-                              : `2px solid ${theme.palette.mode === 'light' ? 'rgba(255,255,255,0.95)' : 'rgba(18, 29, 43, 0.92)'}`,
-                            boxShadow: isSelected
-                              ? `0 0 0 3px ${alpha(theme.palette.primary.main, 0.24)}`
-                              : theme.palette.mode === 'light'
-                                ? '0 6px 18px rgba(21, 53, 90, 0.14)'
-                                : '0 8px 20px rgba(0, 0, 0, 0.34)',
-                            '&:hover': {
-                              bgcolor: color,
-                            },
-                          }}
-                          type="button"
-                          variant="contained"
-                        >
-                          {isSelected ? '✓' : ''}
-                        </Button>
-                      </Tooltip>
-                    );
-                  })}
-                </Stack>
-                {errors.color ? (
-                  <Typography color="error.main" mt={1} variant="caption">
-                    {errors.color.message}
-                  </Typography>
-                ) : null}
-              </Box>
-            )}
-          />
-
-          <Stack spacing={2}>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <Controller
-                control={control}
-                name="startDate"
-                render={({ field }) => (
-                  <DatePicker
-                    disabled={!canManage}
-                    format="MM/DD/YYYY"
-                    label="Start date"
-                    onChange={field.onChange}
-                    slotProps={{
-                      textField: {
-                        error: Boolean(errors.startDate),
-                        helperText: errors.startDate?.message,
-                        fullWidth: true,
-                        sx: { flex: 1.2, '& input': { fontSize: '0.76rem' } },
-                      },
-                    }}
-                    value={field.value}
-                  />
-                )}
-              />
-              <Controller
-                control={control}
-                name="startTime"
-                render={({ field }) => (
-                  <TimePicker
-                    ampm
-                    disabled={!canManage}
-                    label="Start time"
-                    onChange={field.onChange}
-                    slotProps={{
-                      textField: {
-                        error: Boolean(errors.startTime),
-                        helperText: errors.startTime?.message,
-                        fullWidth: true,
-                        sx: { flex: 0.9, '& input': { fontSize: '0.76rem' } },
-                      },
-                    }}
-                    value={field.value}
-                  />
-                )}
-              />
-            </Stack>
-
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-              <Controller
-                control={control}
-                name="endDate"
-                render={({ field }) => (
-                  <DatePicker
-                    disabled={!canManage}
-                    format="MM/DD/YYYY"
-                    label="End date"
-                    onChange={field.onChange}
-                    slotProps={{
-                      textField: {
-                        error: Boolean(errors.endDate),
-                        helperText: errors.endDate?.message,
-                        fullWidth: true,
-                        sx: { flex: 1.2, '& input': { fontSize: '0.76rem' } },
-                      },
-                    }}
-                    value={field.value}
-                  />
-                )}
-              />
-              <Controller
-                control={control}
-                name="endTime"
-                render={({ field }) => (
-                  <TimePicker
-                    ampm
-                    disabled={!canManage}
-                    label="End time"
-                    onChange={field.onChange}
-                    slotProps={{
-                      textField: {
-                        error: Boolean(errors.endTime),
-                        helperText: errors.endTime?.message,
-                        fullWidth: true,
-                        sx: { flex: 0.9, '& input': { fontSize: '0.76rem' } },
-                      },
-                    }}
-                    value={field.value}
-                  />
-                )}
-              />
-            </Stack>
-          </Stack>
-
-          {!isSubmitting && conflictingEvents.length > 0 ? (
-            <Alert severity="warning">
-              <Stack spacing={0.8}>
-                <Typography fontWeight={700} variant="body2">
-                  Date conflict detected
-                </Typography>
-                <Typography variant="body2">
-                  This event overlaps with {conflictingEvents.length} existing {conflictingEvents.length === 1 ? 'event' : 'events'} in
-                  the itinerary.
-                </Typography>
-                <Stack spacing={0.5}>
-                  {conflictingEvents.slice(0, 3).map((conflict) => (
-                    <Typography key={conflict.id} variant="caption">
-                      {conflict.title} • {formatDateTime(conflict.startDateTime)} - {dayjs(conflict.endDateTime).format('h:mm A')}
-                    </Typography>
+                  {eventCategoryOptions.map((category) => (
+                    <MenuItem key={category} value={category}>
+                      {category}
+                    </MenuItem>
                   ))}
-                  {conflictingEvents.length > 3 ? (
-                    <Typography variant="caption">+{conflictingEvents.length - 3} more overlapping events</Typography>
+                </TextField>
+              )}
+            />
+
+            <Controller
+              control={control}
+              name="color"
+              render={({ field }) => (
+                <Box>
+                  <Typography gutterBottom fontWeight={600} variant="body2">
+                    Calendar color
+                  </Typography>
+                  <Stack direction="row" flexWrap="wrap" gap={1}>
+                    {getEventColorOptions(field.value).map((color) => {
+                      const isSelected = Boolean(field.value) && normalizeEventColor(field.value) === normalizeEventColor(color);
+                      const textColor = getEventTextColor(color);
+
+                      return (
+                        <Tooltip key={color} title={color}>
+                          <Button
+                            disabled={!canManage}
+                            onClick={() => field.onChange(color)}
+                            sx={{
+                              minWidth: 0,
+                              width: 42,
+                              height: 42,
+                              borderRadius: '50%',
+                              bgcolor: color,
+                              color: textColor,
+                              border: isSelected
+                                ? `3px solid ${theme.palette.mode === 'light' ? 'rgba(22, 48, 75, 0.9)' : 'rgba(237, 245, 255, 0.92)'}`
+                                : `2px solid ${theme.palette.mode === 'light' ? 'rgba(255,255,255,0.95)' : 'rgba(18, 29, 43, 0.92)'}`,
+                              boxShadow: isSelected
+                                ? `0 0 0 3px ${alpha(theme.palette.primary.main, 0.24)}`
+                                : theme.palette.mode === 'light'
+                                  ? '0 6px 18px rgba(21, 53, 90, 0.14)'
+                                  : '0 8px 20px rgba(0, 0, 0, 0.34)',
+                              '&:hover': {
+                                bgcolor: color,
+                              },
+                            }}
+                            type="button"
+                            variant="contained"
+                          >
+                            {isSelected ? '✓' : ''}
+                          </Button>
+                        </Tooltip>
+                      );
+                    })}
+                  </Stack>
+                  {errors.color ? (
+                    <Typography color="error.main" mt={1} variant="caption">
+                      {errors.color.message}
+                    </Typography>
                   ) : null}
-                </Stack>
+                </Box>
+              )}
+            />
+
+            <Stack spacing={1}>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} sx={{ alignItems: { sm: 'flex-start' } }}>
+                <Controller
+                  control={control}
+                  name="startDate"
+                  render={({ field }) => (
+                    <DatePicker
+                      disabled={!canManage}
+                      format="MM/DD/YYYY"
+                      label="Start date"
+                      onChange={field.onChange}
+                      slotProps={{
+                        textField: {
+                          ...scheduleFieldTextFieldProps,
+                          error: Boolean(errors.startDate),
+                          helperText: errors.startDate?.message,
+                        },
+                      }}
+                      value={field.value}
+                    />
+                  )}
+                />
+                <Controller
+                  control={control}
+                  name="endDate"
+                  render={({ field }) => (
+                    <DatePicker
+                      disabled={!canManage}
+                      format="MM/DD/YYYY"
+                      label="End date"
+                      minDate={startDateValue ?? undefined}
+                      onChange={field.onChange}
+                      slotProps={{
+                        textField: {
+                          ...scheduleFieldTextFieldProps,
+                          error: Boolean(errors.endDate),
+                          helperText: errors.endDate?.message,
+                        },
+                      }}
+                      value={field.value}
+                    />
+                  )}
+                />
               </Stack>
-            </Alert>
-          ) : null}
+
+              {!isAllDayValue ? (
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} sx={{ alignItems: { sm: 'flex-start' } }}>
+                  <Controller
+                    control={control}
+                    name="startTime"
+                    render={({ field }) => (
+                      <TimePicker
+                        ampm
+                        disabled={!canManage}
+                        label="Start time"
+                        onChange={field.onChange}
+                        timeSteps={{ minutes: 15 }}
+                        slotProps={{
+                          textField: {
+                            ...scheduleFieldTextFieldProps,
+                            error: Boolean(errors.startTime),
+                            helperText: errors.startTime?.message,
+                          },
+                        }}
+                        value={field.value}
+                      />
+                    )}
+                  />
+                  <Controller
+                    control={control}
+                    name="endTime"
+                    render={({ field }) => (
+                      <TimePicker
+                        ampm
+                        disabled={!canManage}
+                        label="End time"
+                        onChange={field.onChange}
+                        timeSteps={{ minutes: 15 }}
+                        slotProps={{
+                          textField: {
+                            ...scheduleFieldTextFieldProps,
+                            error: Boolean(errors.endTime),
+                            helperText: errors.endTime?.message,
+                          },
+                        }}
+                        value={field.value}
+                      />
+                    )}
+                  />
+                </Stack>
+              ) : null}
+
+              <Controller
+                control={control}
+                name="isAllDay"
+                render={({ field }) => (
+                  <FormControlLabel
+                    control={<Checkbox checked={field.value} disabled={!canManage} onChange={(_, checked) => field.onChange(checked)} />}
+                    label={
+                      <Typography color="text.primary" variant="body2">
+                        All day
+                      </Typography>
+                    }
+                    sx={{ ml: 0, mr: 0, mt: 0.2, '& .MuiFormControlLabel-label': { fontWeight: 500 } }}
+                  />
+                )}
+              />
+            </Stack>
+
+            {!isSubmitting && conflictingEvents.length > 0 ? (
+              <Alert severity="warning">
+                <Stack spacing={0.8}>
+                  <Typography fontWeight={700} variant="body2">
+                    Date conflict detected
+                  </Typography>
+                  <Typography variant="body2">
+                    This event overlaps with {conflictingEvents.length} existing {conflictingEvents.length === 1 ? 'event' : 'events'} in
+                    the itinerary.
+                  </Typography>
+                  <Stack spacing={0.5}>
+                    {conflictingEvents.slice(0, 3).map((conflict) => (
+                      <Typography key={conflict.id} variant="caption">
+                        {conflict.title} • {formatEventSchedule(conflict)}
+                      </Typography>
+                    ))}
+                    {conflictingEvents.length > 3 ? (
+                      <Typography variant="caption">+{conflictingEvents.length - 3} more overlapping events</Typography>
+                    ) : null}
+                  </Stack>
+                </Stack>
+              </Alert>
+            ) : null}
 
           <Controller
             control={control}
@@ -833,6 +1053,159 @@ export const EventDrawer = ({
             value={locationAddress}
             {...register('locationAddress')}
           />
+
+          <Stack spacing={1}>
+            <Stack alignItems="center" direction="row" justifyContent="space-between" spacing={2}>
+              <Stack alignItems="center" direction="row" spacing={0.9}>
+                <Link2 size={15} />
+                <Typography fontWeight={600} variant="body2">
+                  Links
+                </Typography>
+              </Stack>
+              {canManage ? (
+                <Button
+                  onClick={() => {
+                    appendLink(emptyLink());
+                    setPendingNewLinkEdit(true);
+                  }}
+                  startIcon={<Plus size={14} />}
+                  type="button"
+                  variant="text"
+                >
+                  Add link
+                </Button>
+              ) : null}
+            </Stack>
+
+            {linkFields.length === 0 ? (
+              <Typography color="text.secondary" variant="caption">
+                No links added yet.
+              </Typography>
+            ) : (
+              <Stack spacing={1}>
+                {linkFields.map((field, index) => {
+                  const linkDescription = watch(`links.${index}.description`);
+                  const linkUrl = watch(`links.${index}.url`);
+
+                  return (
+                    <Box
+                      key={field.id}
+                      sx={{
+                        border: `1px solid ${alpha(theme.palette.divider, 0.6)}`,
+                        borderRadius: theme.app.radius.md,
+                        px: 2,
+                        py: 1.5,
+                      }}
+                    >
+                      {editingLinkIds.includes(field.id) ? (
+                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { sm: 'flex-start' } }}>
+                          <TextField
+                            disabled={!canManage}
+                            error={Boolean(errors.links?.[index]?.description)}
+                            helperText={errors.links?.[index]?.description?.message}
+                            label="Description"
+                            placeholder="Booking confirmation"
+                            size="small"
+                            sx={{ flex: { sm: '0 0 36%' } }}
+                            {...register(`links.${index}.description` as const)}
+                          />
+                          <TextField
+                            disabled={!canManage}
+                            error={Boolean(errors.links?.[index]?.url)}
+                            helperText={errors.links?.[index]?.url?.message}
+                            label="URL"
+                            placeholder="https://example.com/booking/ABC123"
+                            size="small"
+                            sx={{ flex: 1 }}
+                            {...register(`links.${index}.url` as const)}
+                          />
+                          {canManage ? (
+                            <Stack direction="row" spacing={0.25} sx={{ mt: { sm: 0.25 } }}>
+                              <IconButton
+                                color="primary"
+                                onClick={async () => {
+                                  const isValid = await trigger([
+                                    `links.${index}.description`,
+                                    `links.${index}.url`,
+                                  ]);
+
+                                  if (isValid) {
+                                    setEditingLinkIds((current) => current.filter((id) => id !== field.id));
+                                  }
+                                }}
+                                type="button"
+                              >
+                                <Check size={16} />
+                              </IconButton>
+                              <IconButton
+                                color="error"
+                                onClick={() => {
+                                  removeLink(index);
+                                  setEditingLinkIds((current) => current.filter((id) => id !== field.id));
+                                }}
+                                type="button"
+                              >
+                                <Trash2 size={16} />
+                              </IconButton>
+                            </Stack>
+                          ) : null}
+                        </Stack>
+                      ) : (
+                        <Stack alignItems="flex-start" direction="row" justifyContent="space-between" spacing={1.2}>
+                          <Stack minWidth={0} spacing={0.35} sx={{ flex: 1 }}>
+                            <Typography fontWeight={600} variant="body2">
+                              {linkDescription || 'Untitled link'}
+                            </Typography>
+                            <Typography
+                              color={linkUrl ? 'primary.main' : 'text.secondary'}
+                              component={linkUrl ? 'a' : 'span'}
+                              href={linkUrl || undefined}
+                              rel={linkUrl ? 'noreferrer' : undefined}
+                              sx={{
+                                overflow: 'hidden',
+                                textDecoration: 'none',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                '&:hover': linkUrl
+                                  ? {
+                                      textDecoration: 'underline',
+                                    }
+                                  : undefined,
+                              }}
+                              target={linkUrl ? '_blank' : undefined}
+                              variant="caption"
+                            >
+                              {linkUrl || 'No URL yet'}
+                            </Typography>
+                          </Stack>
+                          {canManage ? (
+                            <Stack direction="row" spacing={0.25}>
+                              <IconButton
+                                color="primary"
+                                onClick={() => setEditingLinkIds((current) => (current.includes(field.id) ? current : [...current, field.id]))}
+                                type="button"
+                              >
+                                <Edit3 size={16} />
+                              </IconButton>
+                              <IconButton color="error" onClick={() => removeLink(index)} type="button">
+                                <Trash2 size={16} />
+                              </IconButton>
+                            </Stack>
+                          ) : null}
+                        </Stack>
+                      )}
+                    </Box>
+                  );
+                })}
+              </Stack>
+            )}
+
+            {typeof errors.links?.message === 'string' ? (
+              <Typography color="error.main" variant="caption">
+                {errors.links.message}
+              </Typography>
+            ) : null}
+          </Stack>
 
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
             <Controller
@@ -999,21 +1372,21 @@ export const EventDrawer = ({
 
           <Box sx={{ mt: 'auto' }} />
 
-            <Stack direction="row" justifyContent="space-between" pt={1}>
-              <Box>
-                {event && canDelete ? (
-                  <IconButton color="error" onClick={() => setConfirmDeleteOpen(true)}>
-                    <Trash2 size={18} />
-                  </IconButton>
-                ) : null}
-              </Box>
-              <Stack direction="row" spacing={1.2}>
-                <Button onClick={onClose}>Cancel</Button>
-                <Button loading={isSubmitting} type="submit" variant="contained">
-                  {event ? 'Save changes' : 'Create event'}
-                </Button>
-              </Stack>
+          <Stack direction="row" justifyContent="space-between" pt={1}>
+            <Box>
+              {event && canDelete ? (
+                <IconButton color="error" onClick={() => setConfirmDeleteOpen(true)}>
+                  <Trash2 size={18} />
+                </IconButton>
+              ) : null}
+            </Box>
+            <Stack direction="row" spacing={1.2}>
+              <Button onClick={onClose}>Cancel</Button>
+              <Button disabled={!canManage} loading={isSubmitting} type="submit" variant="contained">
+                {event ? 'Save changes' : 'Create event'}
+              </Button>
             </Stack>
+          </Stack>
           </Stack>
         </Stack>
       </Drawer>

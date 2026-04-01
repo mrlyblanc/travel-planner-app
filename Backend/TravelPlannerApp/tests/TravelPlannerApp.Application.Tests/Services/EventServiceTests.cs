@@ -103,6 +103,45 @@ public sealed class EventServiceTests
     }
 
     [Fact]
+    public async Task CreateEventAsync_WithAllDayRemarksAndLinks_PersistsExtendedFields()
+    {
+        var ava = TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com");
+        var itinerary = TestDataFactory.CreateItinerary("itinerary-tokyo", ava.Id);
+        itinerary.Members.Add(TestDataFactory.CreateMember(itinerary, ava));
+
+        var eventRepository = new FakeEventRepository();
+        var service = CreateService(ava, [ava], [itinerary], [], eventRepository);
+
+        var response = await service.CreateEventAsync(itinerary.Id, new CreateEventRequest
+        {
+            Title = "Tokyo base hotel",
+            Description = "All-day hotel stay.",
+            Remarks = "Store luggage before lunch.",
+            Category = EventCategory.Hotel,
+            IsAllDay = true,
+            StartDateTime = new DateTime(2026, 4, 15, 0, 0, 0),
+            EndDateTime = new DateTime(2026, 4, 15, 23, 59, 0),
+            Timezone = "Asia/Tokyo",
+            Links =
+            [
+                new EventLinkInput
+                {
+                    Description = "Booking confirmation",
+                    Url = "https://example.com/booking/tokyo-hotel"
+                }
+            ]
+        });
+
+        Assert.True(response.IsAllDay);
+        Assert.Equal("Store luggage before lunch.", response.Remarks);
+        var link = Assert.Single(response.Links);
+        Assert.Equal("Booking confirmation", link.Description);
+        Assert.Equal("https://example.com/booking/tokyo-hotel", link.Url);
+        Assert.Single(eventRepository.Events);
+        Assert.Single(eventRepository.Events[0].Links);
+    }
+
+    [Fact]
     public async Task UpdateEventAsync_WhenOnlyScheduleChanges_WritesRescheduledAuditLog()
     {
         var ava = TestDataFactory.CreateUser("user-ava", "Ava Santos", "ava@example.com");
@@ -119,8 +158,10 @@ public sealed class EventServiceTests
         {
             Title = "Dinner",
             Description = existingEvent.Description,
+            Remarks = existingEvent.Remarks,
             Category = existingEvent.Category,
             Color = existingEvent.Color,
+            IsAllDay = existingEvent.IsAllDay,
             StartDateTime = existingEvent.StartDateTimeLocal.AddHours(1),
             EndDateTime = existingEvent.EndDateTimeLocal.AddHours(1),
             Timezone = existingEvent.Timezone,
@@ -129,7 +170,12 @@ public sealed class EventServiceTests
             LocationLat = existingEvent.LocationLat,
             LocationLng = existingEvent.LocationLng,
             Cost = existingEvent.Cost,
-            CurrencyCode = existingEvent.CurrencyCode
+            CurrencyCode = existingEvent.CurrencyCode,
+            Links = existingEvent.Links.Select(link => new EventLinkInput
+            {
+                Description = link.Description,
+                Url = link.Url
+            }).ToList()
         });
 
         var audit = Assert.Single(eventRepository.AuditLogs);
@@ -235,8 +281,10 @@ public sealed class EventServiceTests
         {
             Title = "Dinner",
             Description = existingEvent.Description,
+            Remarks = existingEvent.Remarks,
             Category = existingEvent.Category,
             Color = existingEvent.Color,
+            IsAllDay = existingEvent.IsAllDay,
             StartDateTime = existingEvent.StartDateTimeLocal,
             EndDateTime = existingEvent.EndDateTimeLocal,
             Timezone = existingEvent.Timezone,
@@ -245,7 +293,12 @@ public sealed class EventServiceTests
             LocationLat = existingEvent.LocationLat,
             LocationLng = existingEvent.LocationLng,
             Cost = existingEvent.Cost,
-            CurrencyCode = existingEvent.CurrencyCode
+            CurrencyCode = existingEvent.CurrencyCode,
+            Links = existingEvent.Links.Select(link => new EventLinkInput
+            {
+                Description = link.Description,
+                Url = link.Url
+            }).ToList()
         }));
     }
 

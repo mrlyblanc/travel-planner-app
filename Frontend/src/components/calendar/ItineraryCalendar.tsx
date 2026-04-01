@@ -5,7 +5,15 @@ import FullCalendar from '@fullcalendar/react';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import { Box, Typography } from '@mui/material';
 import type { RefObject } from 'react';
-import { dayjs, formatMonthLabel } from '../../lib/date';
+import {
+  DEFAULT_TIMED_SLOT_MINUTES,
+  dayjs,
+  formatCompactTime,
+  formatInclusiveAllDayEndDate,
+  formatMonthLabel,
+  isLongTimedEvent,
+  toCalendarAllDayEndDate,
+} from '../../lib/date';
 import { getDefaultEventColor, getEventTextColor } from '../../lib/events';
 import type { ItineraryEvent } from '../../types/event';
 
@@ -20,7 +28,7 @@ interface ItineraryCalendarProps {
   onViewChange: (view: CalendarView) => void;
   onRangeChange: (label: string) => void;
   onSelectEvent: (event: ItineraryEvent) => void;
-  onSelectSlot: (selection: { start: string; end: string }) => void;
+  onSelectSlot: (selection: { start: string; end: string; allDay: boolean }) => void;
   onReschedule: (eventId: string, start: string, end: string) => void;
 }
 
@@ -38,18 +46,21 @@ export const ItineraryCalendar = ({
 }: ItineraryCalendarProps) => {
   const calendarEvents: EventInput[] = events.map((event) => {
     const fillColor = event.color || getDefaultEventColor(event.category);
+    const renderInAllDayRow = shouldRenderInAllDayRow(event);
 
     return {
       id: event.id,
       title: event.title,
-      start: event.startDateTime,
-      end: event.endDateTime,
+      start: renderInAllDayRow ? dayjs(event.startDateTime).format('YYYY-MM-DD') : event.startDateTime,
+      end: renderInAllDayRow ? toCalendarAllDayEndDate(event.endDateTime) : event.endDateTime,
+      allDay: renderInAllDayRow,
       display: 'block',
       backgroundColor: fillColor,
       borderColor: fillColor,
       textColor: getEventTextColor(fillColor),
       extendedProps: {
         sourceEvent: event,
+        renderInAllDayRow,
       },
     };
   });
@@ -69,18 +80,20 @@ export const ItineraryCalendar = ({
     >
       <FullCalendar
         ref={calendarRef}
-        allDaySlot={false}
+        allDaySlot
+        allDayText="AD"
         dateClick={(arg: DateClickArg) => {
           if (!canManage || arg.dayEl.closest('.fc-event')) {
             return;
           }
 
           const start = dayjs(arg.date);
-          const end = arg.allDay ? start.add(1, 'day') : start.add(1, 'hour');
+          const end = arg.allDay ? start.add(1, 'day') : start.add(DEFAULT_TIMED_SLOT_MINUTES, 'minute');
 
           onSelectSlot({
             start: arg.allDay ? start.format('YYYY-MM-DD') : start.format(),
             end: arg.allDay ? end.format('YYYY-MM-DD') : end.format(),
+            allDay: arg.allDay,
           });
         }}
         editable={canManage}
@@ -90,7 +103,7 @@ export const ItineraryCalendar = ({
           const sourceEvent = arg.event.extendedProps.sourceEvent as ItineraryEvent;
           const fillColor = sourceEvent.color || getDefaultEventColor(sourceEvent.category);
           const textColor = getEventTextColor(fillColor);
-          const timeRangeLabel = buildEventTimeRangeLabel(sourceEvent);
+          const display = buildCalendarEventDisplay(sourceEvent);
 
           return (
             <Box
@@ -103,17 +116,33 @@ export const ItineraryCalendar = ({
               }}
             >
               <Typography
-                sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'inherit', opacity: 0.92 }}
-                variant="caption"
-              >
-                {timeRangeLabel}
-              </Typography>
-              <Typography
-                sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'inherit', fontWeight: 600 }}
+                sx={{
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  color: 'inherit',
+                  fontWeight: 600,
+                }}
                 variant="body2"
               >
-                {arg.event.title}
+                {display.primary}
               </Typography>
+              {display.secondary ? (
+                <Typography
+                  sx={{
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    color: 'inherit',
+                    opacity: 0.92,
+                    lineHeight: 1.18,
+                    mt: 0.2,
+                  }}
+                  variant="caption"
+                >
+                  {display.secondary}
+                </Typography>
+              ) : null}
             </Box>
           );
         }}
@@ -129,6 +158,7 @@ export const ItineraryCalendar = ({
           onSelectSlot({
             start: selection.startStr,
             end: selection.endStr,
+            allDay: selection.allDay,
           })
         }
         slotDuration="00:30:00"
@@ -147,12 +177,36 @@ export const ItineraryCalendar = ({
         }}
         eventDrop={(arg: EventDropArg) => {
           if (arg.event.start && arg.event.end) {
-            onReschedule(arg.event.id, arg.event.start.toISOString(), arg.event.end.toISOString());
+            const sourceEvent = arg.event.extendedProps.sourceEvent as ItineraryEvent;
+            const nextRange = shouldRenderInAllDayRow(sourceEvent)
+              ? buildAllDayRowRescheduleRange(sourceEvent, arg.event.start, arg.event.end)
+              : {
+                  start: arg.event.start.toISOString(),
+                  end: arg.event.end.toISOString(),
+                };
+
+            onReschedule(
+              arg.event.id,
+              nextRange.start,
+              nextRange.end,
+            );
           }
         }}
         eventResize={(arg: EventResizeDoneArg) => {
           if (arg.event.start && arg.event.end) {
-            onReschedule(arg.event.id, arg.event.start.toISOString(), arg.event.end.toISOString());
+            const sourceEvent = arg.event.extendedProps.sourceEvent as ItineraryEvent;
+            const nextRange = shouldRenderInAllDayRow(sourceEvent)
+              ? buildAllDayRowRescheduleRange(sourceEvent, arg.event.start, arg.event.end)
+              : {
+                  start: arg.event.start.toISOString(),
+                  end: arg.event.end.toISOString(),
+                };
+
+            onReschedule(
+              arg.event.id,
+              nextRange.start,
+              nextRange.end,
+            );
           }
         }}
       />
@@ -175,21 +229,64 @@ const buildRangeLabel = ({ start, end, view }: DatesSetArg) => {
   return `${startDate.format('MMM D')} - ${inclusiveEnd.format('MMM D, YYYY')}`;
 };
 
-const buildEventTimeRangeLabel = (event: ItineraryEvent) => {
+const shouldRenderInAllDayRow = (event: ItineraryEvent) => event.isAllDay || isLongTimedEvent(event);
+
+const buildCalendarEventDisplay = (event: ItineraryEvent) => {
   const start = dayjs(event.startDateTime);
   const end = dayjs(event.endDateTime);
 
   if (!start.isValid() || !end.isValid()) {
-    return '';
+    return {
+      primary: event.title,
+      secondary: null as string | null,
+    };
   }
 
-  if (start.isSame(end, 'day')) {
-    return `${start.format('h:mm A')} - ${end.format('h:mm A')}`;
+  if (event.isAllDay) {
+    return {
+      primary: event.title,
+      secondary: null,
+    };
   }
 
-  if (start.isSame(end, 'year')) {
-    return `${start.format('MMM D, h:mm A')} - ${end.format('MMM D, h:mm A')}`;
+  if (isLongTimedEvent(event)) {
+    return {
+      primary: `${formatCompactTime(start)}, ${event.title}`,
+      secondary: null,
+    };
   }
 
-  return `${start.format('MMM D, YYYY h:mm A')} - ${end.format('MMM D, YYYY h:mm A')}`;
+  return {
+    primary: event.title,
+    secondary: `${formatCompactTime(start)} - ${formatCompactTime(end)}`,
+  };
+};
+
+const buildAllDayRowRescheduleRange = (event: ItineraryEvent, start: Date, end: Date | null) => {
+  if (event.isAllDay) {
+    return {
+      start: dayjs(start).format('YYYY-MM-DD'),
+      end: formatInclusiveAllDayEndDate(end, start),
+    };
+  }
+
+  const originalStart = dayjs(event.startDateTime);
+  const originalEnd = dayjs(event.endDateTime);
+  const nextStartDate = dayjs(start);
+  const nextEndDate = end ? dayjs(end).subtract(1, 'day') : nextStartDate;
+
+  return {
+    start: nextStartDate
+      .hour(originalStart.hour())
+      .minute(originalStart.minute())
+      .second(originalStart.second())
+      .millisecond(0)
+      .format(),
+    end: nextEndDate
+      .hour(originalEnd.hour())
+      .minute(originalEnd.minute())
+      .second(originalEnd.second())
+      .millisecond(0)
+      .format(),
+  };
 };

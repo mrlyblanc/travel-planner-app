@@ -246,8 +246,10 @@ public sealed class UtilityAndEdgeCaseTests
         {
             Title = "Dinner at Ginza",
             Description = "Updated",
+            Remarks = eventEntity.Remarks,
             Category = EventCategory.Restaurant,
             Color = "#ff0000",
+            IsAllDay = eventEntity.IsAllDay,
             StartDateTime = eventEntity.StartDateTimeLocal,
             EndDateTime = eventEntity.EndDateTimeLocal,
             Timezone = eventEntity.Timezone,
@@ -256,7 +258,12 @@ public sealed class UtilityAndEdgeCaseTests
             LocationLat = eventEntity.LocationLat,
             LocationLng = eventEntity.LocationLng,
             Cost = eventEntity.Cost,
-            CurrencyCode = eventEntity.CurrencyCode
+            CurrencyCode = eventEntity.CurrencyCode,
+            Links = eventEntity.Links.Select(link => new EventLinkInput
+            {
+                Description = link.Description,
+                Url = link.Url
+            }).ToList()
         });
 
         var audit = Assert.Single(eventRepository.AuditLogs);

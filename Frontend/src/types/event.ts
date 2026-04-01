@@ -8,14 +8,22 @@ export type EventCategory =
   | 'Transport'
   | 'Other';
 
+export interface EventLink {
+  id: string;
+  description: string;
+  url: string;
+}
+
 export interface ItineraryEvent {
   id: string;
   version: string;
   itineraryId: string;
   title: string;
   description: string;
+  remarks: string;
   category: EventCategory;
   color: string;
+  isAllDay: boolean;
   startDateTime: string;
   endDateTime: string;
   timezone: string;
@@ -25,6 +33,7 @@ export interface ItineraryEvent {
   locationLng: number | null;
   cost: number;
   currencyCode: string | null;
+  links: EventLink[];
   createdBy: string;
   updatedBy: string;
   createdAt: string;
@@ -36,8 +45,10 @@ export interface EventAuditSnapshot {
   itineraryId: string;
   title: string;
   description: string | null;
+  remarks: string | null;
   category: EventCategory;
   color: string | null;
+  isAllDay: boolean;
   startDateTime: string;
   endDateTime: string;
   timezone: string;
@@ -47,6 +58,7 @@ export interface EventAuditSnapshot {
   locationLng: number | null;
   cost: number | null;
   currencyCode: string | null;
+  links: EventLink[];
   updatedBy: string;
   updatedAt: string;
 }

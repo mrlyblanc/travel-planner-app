@@ -17,6 +17,7 @@ public sealed class TravelPlannerDbContext : DbContext, IUnitOfWork
     public DbSet<Itinerary> Itineraries => Set<Itinerary>();
     public DbSet<ItineraryMember> ItineraryMembers => Set<ItineraryMember>();
     public DbSet<Event> Events => Set<Event>();
+    public DbSet<EventLink> EventLinks => Set<EventLink>();
     public DbSet<EventAuditLog> EventAuditLogs => Set<EventAuditLog>();
     public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
 
@@ -129,6 +130,7 @@ public sealed class TravelPlannerDbContext : DbContext, IUnitOfWork
             entity.Property(eventEntity => eventEntity.ConcurrencyToken).HasMaxLength(40).IsConcurrencyToken().IsRequired();
             entity.Property(eventEntity => eventEntity.Title).HasMaxLength(160).IsRequired();
             entity.Property(eventEntity => eventEntity.Description).HasMaxLength(4000);
+            entity.Property(eventEntity => eventEntity.Remarks).HasMaxLength(4000);
             entity.Property(eventEntity => eventEntity.Category).HasConversion<string>().HasMaxLength(32);
             entity.Property(eventEntity => eventEntity.Color).HasMaxLength(32);
             entity.Property(eventEntity => eventEntity.Timezone).HasMaxLength(120).IsRequired();
@@ -151,6 +153,21 @@ public sealed class TravelPlannerDbContext : DbContext, IUnitOfWork
                 .HasForeignKey(eventEntity => eventEntity.UpdatedById)
                 .OnDelete(DeleteBehavior.Restrict);
             entity.Ignore(eventEntity => eventEntity.AuditLogs);
+        });
+
+        modelBuilder.Entity<EventLink>(entity =>
+        {
+            entity.ToTable("event_links");
+            entity.HasKey(link => link.Id);
+            entity.Property(link => link.Id).HasMaxLength(80);
+            entity.Property(link => link.EventId).HasMaxLength(80).IsRequired();
+            entity.Property(link => link.Description).HasMaxLength(160).IsRequired();
+            entity.Property(link => link.Url).HasMaxLength(2048).IsRequired();
+            entity.HasIndex(link => new { link.EventId, link.SortOrder });
+            entity.HasOne(link => link.Event)
+                .WithMany(eventEntity => eventEntity.Links)
+                .HasForeignKey(link => link.EventId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<EventAuditLog>(entity =>

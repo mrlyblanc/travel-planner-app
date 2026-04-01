@@ -73,8 +73,10 @@ public sealed class EventService : IEventService
             ItineraryId = itineraryId,
             Title = request.Title.Trim(),
             Description = request.Description?.Trim(),
+            Remarks = request.Remarks?.Trim(),
             Category = request.Category,
             Color = request.Color?.Trim(),
+            IsAllDay = request.IsAllDay,
             StartDateTimeLocal = DateTime.SpecifyKind(request.StartDateTime, DateTimeKind.Unspecified),
             EndDateTimeLocal = DateTime.SpecifyKind(request.EndDateTime, DateTimeKind.Unspecified),
             Timezone = request.Timezone.Trim(),
@@ -87,7 +89,8 @@ public sealed class EventService : IEventService
             CreatedById = currentUser.Id,
             UpdatedById = currentUser.Id,
             CreatedAtUtc = now,
-            UpdatedAtUtc = now
+            UpdatedAtUtc = now,
+            Links = BuildEventLinks(request.Links)
         };
 
         await _eventRepository.AddAsync(eventEntity, cancellationToken);
@@ -117,8 +120,10 @@ public sealed class EventService : IEventService
         var summary = BuildUpdateSummary(eventEntity, request);
         eventEntity.Title = request.Title.Trim();
         eventEntity.Description = request.Description?.Trim();
+        eventEntity.Remarks = request.Remarks?.Trim();
         eventEntity.Category = request.Category;
         eventEntity.Color = request.Color?.Trim();
+        eventEntity.IsAllDay = request.IsAllDay;
         eventEntity.StartDateTimeLocal = DateTime.SpecifyKind(request.StartDateTime, DateTimeKind.Unspecified);
         eventEntity.EndDateTimeLocal = DateTime.SpecifyKind(request.EndDateTime, DateTimeKind.Unspecified);
         eventEntity.Timezone = request.Timezone.Trim();
@@ -128,6 +133,7 @@ public sealed class EventService : IEventService
         eventEntity.LocationLng = request.LocationLng;
         eventEntity.Cost = request.Cost;
         eventEntity.CurrencyCode = NormalizeCurrencyCode(request.CurrencyCode);
+        ReplaceEventLinks(eventEntity, request.Links);
         eventEntity.ConcurrencyToken = ConcurrencyTokenHelper.NewToken();
         eventEntity.UpdatedById = currentUser.Id;
         eventEntity.UpdatedAtUtc = DateTime.UtcNow;
@@ -268,14 +274,17 @@ public sealed class EventService : IEventService
 
         var detailsChanged = !string.Equals(current.Title, normalizedTitle, StringComparison.Ordinal)
             || !string.Equals(current.Description, request.Description?.Trim(), StringComparison.Ordinal)
+            || !string.Equals(current.Remarks, request.Remarks?.Trim(), StringComparison.Ordinal)
             || current.Category != request.Category
             || !string.Equals(current.Color, request.Color?.Trim(), StringComparison.Ordinal)
+            || current.IsAllDay != request.IsAllDay
             || !string.Equals(current.Location, request.Location?.Trim(), StringComparison.Ordinal)
             || !string.Equals(current.LocationAddress, request.LocationAddress?.Trim(), StringComparison.Ordinal)
             || current.LocationLat != request.LocationLat
             || current.LocationLng != request.LocationLng
             || current.Cost != request.Cost
-            || !string.Equals(current.CurrencyCode, NormalizeCurrencyCode(request.CurrencyCode), StringComparison.Ordinal);
+            || !string.Equals(current.CurrencyCode, NormalizeCurrencyCode(request.CurrencyCode), StringComparison.Ordinal)
+            || !AreLinksEqual(current.Links, request.Links);
 
         if (scheduleChanged && !detailsChanged)
         {
@@ -289,5 +298,42 @@ public sealed class EventService : IEventService
     {
         var normalized = currencyCode?.Trim().ToUpperInvariant();
         return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    private static List<EventLink> BuildEventLinks(IEnumerable<EventLinkInput> links)
+    {
+        return links
+            .Select((link, index) => new EventLink
+            {
+                Id = IdGenerator.New("lnk"),
+                Description = link.Description.Trim(),
+                Url = link.Url.Trim(),
+                SortOrder = index
+            })
+            .ToList();
+    }
+
+    private static void ReplaceEventLinks(Event eventEntity, IEnumerable<EventLinkInput> links)
+    {
+        eventEntity.Links.Clear();
+
+        foreach (var link in BuildEventLinks(links))
+        {
+            eventEntity.Links.Add(link);
+        }
+    }
+
+    private static bool AreLinksEqual(IEnumerable<EventLink> currentLinks, IEnumerable<EventLinkInput> requestedLinks)
+    {
+        var current = currentLinks
+            .OrderBy(static link => link.SortOrder)
+            .ThenBy(static link => link.Id, StringComparer.Ordinal)
+            .Select(static link => (Description: link.Description, Url: link.Url))
+            .ToArray();
+        var requested = requestedLinks
+            .Select(static link => (Description: link.Description.Trim(), Url: link.Url.Trim()))
+            .ToArray();
+
+        return current.SequenceEqual(requested);
     }
 }

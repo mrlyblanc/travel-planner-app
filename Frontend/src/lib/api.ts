@@ -1,6 +1,7 @@
 import { normalizeCurrencyCode } from './currency';
+import { formatLocalDateTimePayload } from './date';
 import { getDefaultEventColor, normalizeEventColor } from './events';
-import type { EventAuditLog, EventAuditSnapshot, EventCategory, ItineraryEvent } from '../types/event';
+import type { EventAuditLog, EventAuditSnapshot, EventCategory, EventLink, ItineraryEvent } from '../types/event';
 import type { UserNotification } from '../types/notification';
 import type { Itinerary, ItineraryMember, ItineraryShareCode } from '../types/itinerary';
 import type { User } from '../types/user';
@@ -150,8 +151,10 @@ interface EventResponseDto {
   itineraryId: string;
   title: string;
   description?: string | null;
+  remarks?: string | null;
   category: EventCategory;
   color?: string | null;
+  isAllDay: boolean;
   startDateTime: string;
   endDateTime: string;
   timezone: string;
@@ -161,6 +164,7 @@ interface EventResponseDto {
   locationLng?: number | null;
   cost?: number | null;
   currencyCode?: string | null;
+  links?: EventLinkResponseDto[] | null;
   createdById: string;
   updatedById: string;
   createdAtUtc: string;
@@ -172,8 +176,10 @@ interface EventAuditSnapshotResponseDto {
   itineraryId: string;
   title: string;
   description?: string | null;
+  remarks?: string | null;
   category: EventCategory;
   color?: string | null;
+  isAllDay: boolean;
   startDateTime: string;
   endDateTime: string;
   timezone: string;
@@ -183,8 +189,15 @@ interface EventAuditSnapshotResponseDto {
   locationLng?: number | null;
   cost?: number | null;
   currencyCode?: string | null;
+  links?: EventLinkResponseDto[] | null;
   updatedById: string;
   updatedAtUtc: string;
+}
+
+interface EventLinkResponseDto {
+  id: string;
+  description: string;
+  url: string;
 }
 
 interface EventAuditLogResponseDto {
@@ -237,8 +250,10 @@ export interface ItineraryInputDto {
 export interface EventInputDto {
   title: string;
   description: string;
+  remarks: string;
   category: EventCategory;
   color: string;
+  isAllDay: boolean;
   startDateTime: string;
   endDateTime: string;
   timezone: string;
@@ -248,6 +263,10 @@ export interface EventInputDto {
   locationLng: number | null;
   cost: number;
   currencyCode: string | null;
+  links: Array<{
+    description: string;
+    url: string;
+  }>;
 }
 
 export interface ItineraryRealtimeNotification {
@@ -477,14 +496,22 @@ const mapItineraryResponse = (itinerary: ItineraryResponseDto, members: Itinerar
   updatedAt: normalizeUtcTimestamp(itinerary.updatedAtUtc),
 });
 
+const mapEventLinkResponse = (link: EventLinkResponseDto): EventLink => ({
+  id: link.id,
+  description: link.description,
+  url: link.url,
+});
+
 const mapEventResponse = (event: EventResponseDto): ItineraryEvent => ({
   id: event.id,
   version: event.version,
   itineraryId: event.itineraryId,
   title: event.title,
   description: event.description ?? '',
+  remarks: event.remarks ?? '',
   category: event.category,
   color: normalizeEventColor(event.color ?? getDefaultEventColor(event.category)),
+  isAllDay: event.isAllDay,
   startDateTime: event.startDateTime,
   endDateTime: event.endDateTime,
   timezone: event.timezone,
@@ -494,6 +521,7 @@ const mapEventResponse = (event: EventResponseDto): ItineraryEvent => ({
   locationLng: event.locationLng ?? null,
   cost: event.cost ?? 0,
   currencyCode: normalizeCurrencyCode(event.currencyCode),
+  links: (event.links ?? []).map(mapEventLinkResponse),
   createdBy: event.createdById,
   updatedBy: event.updatedById,
   createdAt: normalizeUtcTimestamp(event.createdAtUtc),
@@ -505,8 +533,10 @@ const mapAuditSnapshot = (snapshot: EventAuditSnapshotResponseDto): EventAuditSn
   itineraryId: snapshot.itineraryId,
   title: snapshot.title,
   description: snapshot.description ?? null,
+  remarks: snapshot.remarks ?? null,
   category: snapshot.category,
   color: snapshot.color ?? null,
+  isAllDay: snapshot.isAllDay,
   startDateTime: snapshot.startDateTime,
   endDateTime: snapshot.endDateTime,
   timezone: snapshot.timezone,
@@ -516,6 +546,7 @@ const mapAuditSnapshot = (snapshot: EventAuditSnapshotResponseDto): EventAuditSn
   locationLng: snapshot.locationLng ?? null,
   cost: snapshot.cost ?? null,
   currencyCode: normalizeCurrencyCode(snapshot.currencyCode),
+  links: (snapshot.links ?? []).map(mapEventLinkResponse),
   updatedBy: snapshot.updatedById,
   updatedAt: normalizeUtcTimestamp(snapshot.updatedAtUtc),
 });
@@ -556,10 +587,12 @@ const toItineraryPayload = (input: ItineraryInputDto) => ({
 const toEventPayload = (input: EventInputDto) => ({
   title: input.title,
   description: input.description,
+  remarks: input.remarks,
   category: input.category,
   color: input.color,
-  startDateTime: input.startDateTime,
-  endDateTime: input.endDateTime,
+  isAllDay: input.isAllDay,
+  startDateTime: formatLocalDateTimePayload(input.startDateTime),
+  endDateTime: formatLocalDateTimePayload(input.endDateTime),
   timezone: input.timezone,
   location: input.location,
   locationAddress: input.locationAddress,
@@ -567,6 +600,10 @@ const toEventPayload = (input: EventInputDto) => ({
   locationLng: input.locationLng,
   cost: input.cost,
   currencyCode: normalizeCurrencyCode(input.currencyCode),
+  links: input.links.map((link) => ({
+    description: link.description,
+    url: link.url,
+  })),
 });
 
 export const authSessionCache = {

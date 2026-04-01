@@ -92,7 +92,7 @@ export const ItineraryDetailsPage = () => {
   const [isPreparingShareDialog, setIsPreparingShareDialog] = useState(false);
   const [eventDrawerOpen, setEventDrawerOpen] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
-  const [draftRange, setDraftRange] = useState<{ start: string; end: string } | null>(null);
+  const [draftRange, setDraftRange] = useState<{ start: string; end: string; allDay: boolean } | null>(null);
   const [isShareCodeLoading, setIsShareCodeLoading] = useState(false);
   const [bundleLoadError, setBundleLoadError] = useState<string | null>(null);
   const itineraryCreatedAt = itinerary?.createdAt ?? '';
@@ -241,7 +241,7 @@ export const ItineraryDetailsPage = () => {
     }
   }, [handleLoadShareCode, isOwner, shareCode]);
 
-  const openCreateEvent = (selection?: { start: string; end: string }) => {
+  const openCreateEvent = (selection?: { start: string; end: string; allDay: boolean }) => {
     setSelectedEventId(null);
     setDraftRange(selection ?? null);
     setEventDrawerOpen(true);

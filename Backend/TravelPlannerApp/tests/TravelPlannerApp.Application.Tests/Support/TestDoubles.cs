@@ -399,8 +399,10 @@ internal static class TestDataFactory
             ItineraryId = itineraryId,
             Title = title,
             Description = "Test event",
+            Remarks = "Bring booking confirmation and meet 10 minutes early.",
             Category = EventCategory.Activity,
             Color = "#000000",
+            IsAllDay = false,
             StartDateTimeLocal = new DateTime(2026, 4, 15, 10, 0, 0, DateTimeKind.Unspecified),
             EndDateTimeLocal = new DateTime(2026, 4, 15, 12, 0, 0, DateTimeKind.Unspecified),
             Timezone = "Asia/Tokyo",
@@ -413,7 +415,18 @@ internal static class TestDataFactory
             CreatedById = createdById,
             UpdatedById = updatedById,
             CreatedAtUtc = new DateTime(2026, 2, 1, 2, 0, 0, DateTimeKind.Utc),
-            UpdatedAtUtc = new DateTime(2026, 2, 1, 2, 0, 0, DateTimeKind.Utc)
+            UpdatedAtUtc = new DateTime(2026, 2, 1, 2, 0, 0, DateTimeKind.Utc),
+            Links =
+            [
+                new EventLink
+                {
+                    Id = $"{id}-lnk-1",
+                    EventId = id,
+                    Description = "Booking page",
+                    Url = "https://example.com/test-event",
+                    SortOrder = 0
+                }
+            ]
         };
     }
 

@@ -588,12 +588,23 @@ public sealed class MinimalApiEndpointsTests
         var createResponse = await client.PostAsJsonAsync("/api/itineraries/itinerary-tokyo/events", new CreateEventRequest
         {
             Title = "Late Dinner",
+            Description = "Supper after the evening walk.",
+            Remarks = "Check if the reservation is still under Ava.",
             Category = EventCategory.Restaurant,
+            IsAllDay = false,
             StartDateTime = new DateTime(2026, 4, 16, 19, 0, 0),
             EndDateTime = new DateTime(2026, 4, 16, 21, 0, 0),
             Timezone = "Asia/Tokyo",
             Cost = 40m,
-            CurrencyCode = "JPY"
+            CurrencyCode = "JPY",
+            Links =
+            [
+                new EventLinkInput
+                {
+                    Description = "Reservation",
+                    Url = "https://example.com/reservations/late-dinner"
+                }
+            ]
         }, JsonOptions);
 
         createResponse.EnsureSuccessStatusCode();
@@ -601,12 +612,41 @@ public sealed class MinimalApiEndpointsTests
         var createdEvent = await createResponse.Content.ReadFromJsonAsync<EventResponse>(JsonOptions);
         Assert.NotNull(createdEvent);
         Assert.Equal("JPY", createdEvent!.CurrencyCode);
+        Assert.Equal("Check if the reservation is still under Ava.", createdEvent.Remarks);
+        Assert.False(createdEvent.IsAllDay);
+        var createdLink = Assert.Single(createdEvent.Links);
+        Assert.Equal("Reservation", createdLink.Description);
 
         var history = await client.GetFromJsonAsync<List<EventAuditLogResponse>>($"/api/events/{createdEvent!.Id}/history", JsonOptions);
 
         Assert.NotNull(history);
         Assert.Single(history!);
         Assert.Equal(EventAuditAction.Created, history[0].Action);
+    }
+
+    [Fact]
+    public async Task CreateEvent_WithMultiDayAllDayPayload_ReturnsAllDayEvent()
+    {
+        using var factory = new TravelPlannerApiFactory();
+        using var client = await factory.CreateAuthenticatedClientAsync(AvaEmail);
+
+        var createResponse = await client.PostAsJsonAsync("/api/itineraries/itinerary-tokyo/events", new CreateEventRequest
+        {
+            Title = "Hotel stay",
+            Description = "Two nights in Tokyo.",
+            Category = EventCategory.Hotel,
+            IsAllDay = true,
+            StartDateTime = new DateTime(2026, 4, 18, 0, 0, 0),
+            EndDateTime = new DateTime(2026, 4, 20, 23, 59, 0),
+            Timezone = "Asia/Tokyo"
+        }, JsonOptions);
+
+        createResponse.EnsureSuccessStatusCode();
+        var createdEvent = await createResponse.Content.ReadFromJsonAsync<EventResponse>(JsonOptions);
+        Assert.NotNull(createdEvent);
+        Assert.True(createdEvent!.IsAllDay);
+        Assert.Equal(new DateTime(2026, 4, 18, 0, 0, 0), createdEvent.StartDateTime);
+        Assert.Equal(new DateTime(2026, 4, 20, 23, 59, 0), createdEvent.EndDateTime);
     }
 
     [Fact]

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { dayjs } from '../../lib/date';
+import { buildAllDayDateTimeRange, dayjs } from '../../lib/date';
 import {
   ApiError,
   authSessionCache,
@@ -978,13 +978,22 @@ export const useTravelStore = create<TravelState>((set, get) => {
       return;
     }
 
+    const nextRange = currentEvent.isAllDay
+      ? buildAllDayDateTimeRange(startDateTime, endDateTime)
+      : {
+          startDateTime,
+          endDateTime,
+        };
+
     await get().updateEvent(eventId, {
       title: currentEvent.title,
       description: currentEvent.description,
+      remarks: currentEvent.remarks,
       category: currentEvent.category,
       color: currentEvent.color,
-      startDateTime,
-      endDateTime,
+      isAllDay: currentEvent.isAllDay,
+      startDateTime: nextRange.startDateTime,
+      endDateTime: nextRange.endDateTime,
       timezone: currentEvent.timezone,
       location: currentEvent.location,
       locationAddress: currentEvent.locationAddress,
@@ -992,6 +1001,10 @@ export const useTravelStore = create<TravelState>((set, get) => {
       locationLng: currentEvent.locationLng,
       cost: currentEvent.cost,
       currencyCode: currentEvent.currencyCode,
+      links: currentEvent.links.map((link) => ({
+        description: link.description,
+        url: link.url,
+      })),
     });
   },
   });

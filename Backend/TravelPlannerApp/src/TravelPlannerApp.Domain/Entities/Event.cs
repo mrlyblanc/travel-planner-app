@@ -9,8 +9,10 @@ public sealed class Event
     public string ItineraryId { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public string? Description { get; set; }
+    public string? Remarks { get; set; }
     public EventCategory Category { get; set; }
     public string? Color { get; set; }
+    public bool IsAllDay { get; set; }
     public DateTime StartDateTimeLocal { get; set; }
     public DateTime EndDateTimeLocal { get; set; }
     public string Timezone { get; set; } = string.Empty;
@@ -28,5 +30,6 @@ public sealed class Event
     public Itinerary? Itinerary { get; set; }
     public User? CreatedBy { get; set; }
     public User? UpdatedBy { get; set; }
+    public ICollection<EventLink> Links { get; set; } = new List<EventLink>();
     public ICollection<EventAuditLog> AuditLogs { get; set; } = new List<EventAuditLog>();
 }
