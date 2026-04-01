@@ -78,6 +78,16 @@ const readTimezoneNamePart = (timezone: string, timeZoneName: 'long' | 'longOffs
     .find((part) => part.type === 'timeZoneName')
     ?.value;
 
+export const formatTimezoneOffsetLabel = (timezone: string) => {
+  const normalizedTimezone = timezone.trim();
+  if (!normalizedTimezone) {
+    return '';
+  }
+
+  const offsetLabel = readTimezoneNamePart(normalizedTimezone, 'longOffset') ?? 'GMT';
+  return offsetLabel.replace(/:00$/, '');
+};
+
 export const formatTimezoneDisplayLabel = (timezone: string) => {
   const normalizedTimezone = timezone.trim();
   if (!normalizedTimezone) {
@@ -89,7 +99,7 @@ export const formatTimezoneDisplayLabel = (timezone: string) => {
     return cachedLabel;
   }
 
-  const offsetLabel = readTimezoneNamePart(normalizedTimezone, 'longOffset') ?? 'GMT';
+  const offsetLabel = formatTimezoneOffsetLabel(normalizedTimezone) || 'GMT';
   const longName = readTimezoneNamePart(normalizedTimezone, 'long');
   const fallbackName = formatTimezoneLabel(normalizedTimezone);
   const displayName = longName && longName !== offsetLabel ? longName : fallbackName;

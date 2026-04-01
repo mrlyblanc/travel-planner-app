@@ -4,11 +4,11 @@ import {
   alpha,
   Box,
   Button,
+  ButtonBase,
   Card,
   CardContent,
   Chip,
   FormControl,
-  Grid,
   IconButton,
   MenuItem,
   Select,
@@ -16,16 +16,15 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import { styled } from '@mui/material/styles';
+import { styled, type Theme } from '@mui/material/styles';
 import type FullCalendar from '@fullcalendar/react';
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { useToast } from '../app/providers/ToastProvider';
 import { useTravelStore, type EventInput, type ItineraryInput } from '../app/store/useTravelStore';
 import type { CalendarView, FullCalendarView } from '../components/calendar/ItineraryCalendar';
-import { CostSummaryCard } from '../components/common/CostSummaryCard';
 import { RouteLoadingScreen } from '../components/common/RouteLoadingScreen';
-import { EventListPanel } from '../components/event/EventListPanel';
+import { EventPreviewDialog } from '../components/event/EventPreviewDialog';
 import { UserAvatarGroup } from '../components/user/UserAvatarGroup';
 import { ApiError } from '../lib/api';
 import { getCostTotalsByCurrency, getCurrencySummaryDisplay } from '../lib/currency';
@@ -43,6 +42,9 @@ const EventDrawer = lazy(() =>
 );
 const ItineraryFormDialog = lazy(() =>
   import('../components/itinerary/ItineraryFormDialog').then((module) => ({ default: module.ItineraryFormDialog })),
+);
+const ItineraryInsightsDialog = lazy(() =>
+  import('../components/itinerary/ItineraryInsightsDialog').then((module) => ({ default: module.ItineraryInsightsDialog })),
 );
 const loadShareItineraryDialog = () => import('../components/itinerary/ShareItineraryDialog');
 const ShareItineraryDialog = lazy(() =>
@@ -96,6 +98,10 @@ export const ItineraryDetailsPage = () => {
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [isPreparingShareDialog, setIsPreparingShareDialog] = useState(false);
   const [eventDrawerOpen, setEventDrawerOpen] = useState(false);
+  const [previewEventId, setPreviewEventId] = useState<string | null>(null);
+  const [previewAnchorEl, setPreviewAnchorEl] = useState<HTMLElement | null>(null);
+  const [insightsDialogOpen, setInsightsDialogOpen] = useState(false);
+  const [insightsTab, setInsightsTab] = useState<'events' | 'costs'>('events');
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [draftRange, setDraftRange] = useState<{ start: string; end: string; allDay: boolean } | null>(null);
   const [isShareCodeLoading, setIsShareCodeLoading] = useState(false);
@@ -110,10 +116,15 @@ export const ItineraryDetailsPage = () => {
   );
   const canManage = itinerary?.memberIds.includes(currentUserId) ?? false;
   const isOwner = itinerary?.createdBy === currentUserId;
+  const previewEvent = previewEventId ? events.find((event) => event.id === previewEventId) ?? null : null;
   const selectedEvent = selectedEventId ? events.find((event) => event.id === selectedEventId) ?? null : null;
-  const canDeleteSelectedEvent = Boolean(
-    selectedEvent && currentUserId && (isOwner || selectedEvent.createdBy === currentUserId),
+  const canDeleteEvent = useCallback(
+    (event: { createdBy: string } | null) =>
+      Boolean(event && currentUserId && (isOwner || event.createdBy === currentUserId)),
+    [currentUserId, isOwner],
   );
+  const canDeletePreviewEvent = canDeleteEvent(previewEvent);
+  const canDeleteSelectedEvent = canDeleteEvent(selectedEvent);
   const shareCode = itinerary ? itineraryShareCodes[itinerary.id] ?? null : null;
   const members = itinerary ? itinerary.memberIds.map((memberId) => usersMap[memberId]).filter(Boolean) : [];
   const collaborators = members.filter((member) => member.id !== currentUserId);
@@ -191,6 +202,17 @@ export const ItineraryDetailsPage = () => {
     }
   }, [activeView]);
 
+  const closeEventPreview = useCallback(() => {
+    setPreviewEventId(null);
+    setPreviewAnchorEl(null);
+  }, []);
+
+  useEffect(() => {
+    if (previewEventId && !previewEvent) {
+      closeEventPreview();
+    }
+  }, [closeEventPreview, previewEvent, previewEventId]);
+
   const handleLoadShareCode = useCallback(async () => {
     if (!isOwner || !currentItineraryId) {
       return;
@@ -256,10 +278,24 @@ export const ItineraryDetailsPage = () => {
   }, [handleLoadShareCode, isOwner, shareCode]);
 
   const openCreateEvent = (selection?: { start: string; end: string; allDay: boolean }) => {
+    closeEventPreview();
     setSelectedEventId(null);
     setDraftRange(selection ?? null);
     setEventDrawerOpen(true);
   };
+
+  const openEventEditor = useCallback((event: { id: string }) => {
+    closeEventPreview();
+    setSelectedEventId(event.id);
+    setDraftRange(null);
+    setEventDrawerOpen(true);
+    void loadEventHistory(event.id);
+  }, [closeEventPreview, loadEventHistory]);
+
+  const openEventPreview = useCallback((event: { id: string }, anchorEl: HTMLElement) => {
+    setPreviewEventId(event.id);
+    setPreviewAnchorEl(anchorEl);
+  }, []);
 
   const handleEventSave = async (values: EventInput, eventId?: string) => {
     if (eventId) {
@@ -278,6 +314,7 @@ export const ItineraryDetailsPage = () => {
   };
 
   const handleCalendarViewChange = (nextView: CalendarView) => {
+    closeEventPreview();
     const calendarApi = calendarRef.current?.getApi();
     const referenceDate = calendarApi?.getDate() ?? (visibleDate ? dayjs(visibleDate).toDate() : null);
     const nextVisibleDate = referenceDate ? dayjs(referenceDate).format('YYYY-MM-DD') : fallbackVisibleDate;
@@ -301,6 +338,7 @@ export const ItineraryDetailsPage = () => {
       return;
     }
 
+    closeEventPreview();
     calendarRef.current?.getApi().prev();
   };
 
@@ -309,6 +347,7 @@ export const ItineraryDetailsPage = () => {
       return;
     }
 
+    closeEventPreview();
     calendarRef.current?.getApi().next();
   };
 
@@ -317,11 +356,13 @@ export const ItineraryDetailsPage = () => {
       return;
     }
 
+    closeEventPreview();
     calendarRef.current?.getApi().today();
   };
 
   const handleDeleteEvent = async (eventId: string) => {
     await deleteEvent(eventId);
+    closeEventPreview();
     setEventDrawerOpen(false);
     setSelectedEventId(null);
     setDraftRange(null);
@@ -425,7 +466,7 @@ export const ItineraryDetailsPage = () => {
                   </Typography>
                 </Stack>
                 {collaborators.length > 0 ? (
-                <UserAvatarGroup max={5} users={collaborators} />
+                  <UserAvatarGroup max={5} users={collaborators} />
                 ) : (
                   <Typography color="text.secondary" variant="body2">
                     Just you on this itinerary for now
@@ -434,14 +475,27 @@ export const ItineraryDetailsPage = () => {
               </Stack>
 
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-                <Metric label="Events" value={String(events.length)} />
                 <Metric
+                  clickable
+                  label="Events"
+                  onClick={() => {
+                    setInsightsTab('events');
+                    setInsightsDialogOpen(true);
+                  }}
+                  value={String(events.length)}
+                />
+                <Metric
+                  clickable
                   detail={
                     totalCostSummary && totalCostSummary.totalCount > 1
                       ? `+${totalCostSummary.totalCount - 1} more currenc${totalCostSummary.totalCount - 1 === 1 ? 'y' : 'ies'}`
                       : undefined
                   }
                   label="Total cost"
+                  onClick={() => {
+                    setInsightsTab('costs');
+                    setInsightsDialogOpen(true);
+                  }}
                   value={totalCostSummary?.primaryLabel ?? 'No costs yet'}
                 />
                 <Metric label="Last updated" value={latestEventActivityLabel} />
@@ -504,70 +558,59 @@ export const ItineraryDetailsPage = () => {
         </ToolbarCardContent>
       </Card>
 
-      <Grid container spacing={2.5}>
-        <Grid size={{ xs: 12, xl: 8 }}>
-          <Card>
-            <CalendarCardContent>
-              <Suspense fallback={<CalendarSectionFallback />}>
-                {activeView === 'schedule' ? (
-                  <ItineraryScheduleView
-                    events={events}
-                    onSelectEvent={(event) => {
-                      setSelectedEventId(event.id);
-                      setDraftRange(null);
-                      setEventDrawerOpen(true);
-                      void loadEventHistory(event.id);
-                    }}
-                  />
-                ) : (
-                  <ItineraryCalendar
-                    activeView={activeView as FullCalendarView}
-                    calendarRef={calendarRef}
-                    canManage={canManage}
-                    events={events}
-                    initialDate={visibleDate || itinerary.startDate}
-                    onRangeChange={setRangeLabel}
-                    onReschedule={(eventId, start, end) => {
-                      void rescheduleEvent(eventId, start, end).then(() => showToast('Event rescheduled'));
-                    }}
-                    onSelectEvent={(event) => {
-                      setSelectedEventId(event.id);
-                      setDraftRange(null);
-                      setEventDrawerOpen(true);
-                      void loadEventHistory(event.id);
-                    }}
-                    onSelectSlot={(selection) => openCreateEvent(selection)}
-                    onViewChange={(view) => {
-                      setActiveView(view);
-                      const currentDate = calendarRef.current?.getApi().getDate();
-                      if (currentDate) {
-                        setVisibleDate(dayjs(currentDate).format('YYYY-MM-DD'));
-                      }
-                    }}
-                  />
-                )}
-              </Suspense>
-            </CalendarCardContent>
-          </Card>
-        </Grid>
+      <Card>
+        <CalendarCardContent>
+          <Suspense fallback={<CalendarSectionFallback />}>
+            {activeView === 'schedule' ? (
+              <ItineraryScheduleView
+                activeEventId={previewEventId ?? selectedEventId}
+                events={events}
+                onSelectEvent={(event, anchorEl) => openEventPreview(event, anchorEl)}
+              />
+            ) : (
+              <ItineraryCalendar
+                activeView={activeView as FullCalendarView}
+                activeEventId={previewEventId ?? selectedEventId}
+                calendarRef={calendarRef}
+                canManage={canManage}
+                events={events}
+                initialDate={visibleDate || itinerary.startDate}
+                onRangeChange={setRangeLabel}
+                onReschedule={(eventId, start, end) => {
+                  void rescheduleEvent(eventId, start, end).then(() => showToast('Event rescheduled'));
+                }}
+                onSelectEvent={(event, anchorEl) => openEventPreview(event, anchorEl)}
+                onSelectSlot={(selection) => openCreateEvent(selection)}
+                onViewChange={(view) => {
+                  setActiveView(view);
+                  const currentDate = calendarRef.current?.getApi().getDate();
+                  if (currentDate) {
+                    setVisibleDate(dayjs(currentDate).format('YYYY-MM-DD'));
+                  }
+                }}
+              />
+            )}
+          </Suspense>
+        </CalendarCardContent>
+      </Card>
 
-        <Grid size={{ xs: 12, xl: 4 }}>
-          <Stack spacing={2.5}>
-            <CostSummaryCard events={events} />
-            <EventListPanel
-              events={sortedEvents}
-              selectedEventId={selectedEventId}
-              onSelectEvent={(event) => {
-                setSelectedEventId(event.id);
-                setDraftRange(null);
-                setEventDrawerOpen(true);
-                void loadEventHistory(event.id);
-              }}
-              usersMap={usersMap}
-            />
-          </Stack>
-        </Grid>
-      </Grid>
+      <EventPreviewDialog
+        anchorEl={previewAnchorEl}
+        canDelete={canDeletePreviewEvent}
+        canManage={canManage}
+        event={previewEvent}
+        onClose={closeEventPreview}
+        onDelete={handleDeleteEvent}
+        onEdit={() => {
+          if (!previewEvent) {
+            return;
+          }
+
+          openEventEditor(previewEvent);
+        }}
+        open={Boolean(previewEvent && previewAnchorEl)}
+        usersMap={usersMap}
+      />
 
       <Suspense fallback={null}>
         {editDialogOpen ? (
@@ -627,8 +670,23 @@ export const ItineraryDetailsPage = () => {
             usersMap={usersMap}
           />
         ) : null}
-      </Suspense>
 
+        {insightsDialogOpen ? (
+          <ItineraryInsightsDialog
+            events={sortedEvents}
+            onClose={() => setInsightsDialogOpen(false)}
+            onSelectEvent={(event) => {
+              setInsightsDialogOpen(false);
+              openEventEditor(event);
+            }}
+            onTabChange={setInsightsTab}
+            open={insightsDialogOpen}
+            selectedEventId={selectedEventId}
+            tab={insightsTab}
+            usersMap={usersMap}
+          />
+        ) : null}
+      </Suspense>
     </Stack>
   );
 };
@@ -637,25 +695,55 @@ const Metric = ({
   label,
   value,
   detail,
+  onClick,
+  clickable = false,
 }: {
   label: string;
   value: ReactNode;
   detail?: string;
+  onClick?: () => void;
+  clickable?: boolean;
 }) => {
-  return (
-    <MetricPanel>
-      <Typography color="text.secondary" variant="caption">
+  const content = (
+    <MetricContent>
+      <Typography color="text.secondary" sx={{ lineHeight: 1.2 }} variant="caption">
         {label}
       </Typography>
-      <Typography fontWeight={700} mt={0.5} sx={{ wordBreak: 'break-word' }} variant="body1">
+      <Typography
+        fontWeight={700}
+        sx={{
+          wordBreak: 'break-word',
+          lineHeight: 1.2,
+          minHeight: 26,
+          display: 'flex',
+          alignItems: 'flex-start',
+        }}
+        variant="body1"
+      >
         {value}
       </Typography>
-      {detail ? (
-        <Typography color="text.secondary" mt={0.45} variant="caption">
-          {detail}
-        </Typography>
-      ) : null}
-    </MetricPanel>
+      <MetricDetail>
+        {detail ? (
+          <Typography color="text.secondary" sx={{ lineHeight: 1.25 }} variant="caption">
+            {detail}
+          </Typography>
+        ) : null}
+      </MetricDetail>
+    </MetricContent>
+  );
+
+  if (!clickable) {
+    return (
+      <MetricPanel>
+        {content}
+      </MetricPanel>
+    );
+  }
+
+  return (
+    <MetricActionButton onClick={onClick}>
+      <Box>{content}</Box>
+    </MetricActionButton>
   );
 };
 
@@ -706,15 +794,48 @@ const CalendarCardContent = styled(CardContent)(({ theme }) => ({
   padding: theme.spacing(1.5),
 }));
 
-const MetricPanel = styled(Box)(({ theme }) => ({
-  minWidth: 136,
+const metricPanelStyles = (theme: Theme) => ({
+  width: '100%',
+  minHeight: 92,
+  boxSizing: 'border-box',
   paddingInline: theme.spacing(2),
   paddingBlock: theme.spacing(1.4),
   borderRadius: theme.app.radius.md,
   backgroundColor: theme.app.surfaces.metric,
   border: `1px solid ${theme.app.surfaces.metricBorder}`,
   backdropFilter: 'blur(12px)',
+  [theme.breakpoints.up('sm')]: {
+    width: 162,
+  },
+});
+
+const MetricPanel = styled(Box)(({ theme }) => ({
+  ...(metricPanelStyles(theme) as Record<string, unknown>),
 }));
+
+const MetricActionButton = styled(ButtonBase)(({ theme }) => ({
+  ...(metricPanelStyles(theme) as Record<string, unknown>),
+  display: 'block',
+  textAlign: 'left',
+  verticalAlign: 'top',
+  '&:hover': {
+    backgroundColor: theme.palette.action.hover,
+  },
+}));
+
+const MetricContent = styled(Box)({
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'flex-start',
+  height: '100%',
+  gap: 4,
+});
+
+const MetricDetail = styled(Box)({
+  minHeight: 16,
+  display: 'flex',
+  alignItems: 'flex-start',
+});
 
 const CalendarSectionFallback = () => (
   <Box sx={{ minHeight: 520 }}>

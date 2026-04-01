@@ -16,6 +16,7 @@ import {
   Drawer,
   FormControlLabel,
   IconButton,
+  InputAdornment,
   MenuItem,
   Tooltip,
   Stack,
@@ -35,7 +36,6 @@ import {
   getCurrencyMinorUnit,
   getCurrencyOption,
   getCurrencyOptionLabel,
-  getCurrencyStep,
   hasValidCurrencyPrecision,
   normalizeCurrencyCode,
   roundCurrencyAmount,
@@ -1265,8 +1265,18 @@ export const EventDrawer = ({
                     errors.cost?.message ??
                     `Optional budget estimate for this stop, booking, or activity${selectedCurrencyOption ? ` in ${selectedCurrencyOption.code}` : ''}.`
                   }
-                  inputProps={{ min: 0, step: getCurrencyStep(selectedCurrencyCode) }}
+                  inputProps={{
+                    inputMode: 'decimal',
+                    pattern: `[0-9]+([.][0-9]{0,${getCurrencyMinorUnit(selectedCurrencyCode)}})?`,
+                  }}
                   label="Cost"
+                  slotProps={{
+                    input: {
+                      startAdornment: selectedCurrencyCode ? (
+                        <InputAdornment position="start">{selectedCurrencyCode}</InputAdornment>
+                      ) : undefined,
+                    },
+                  }}
                   onChange={field.onChange}
                   onBlur={(blurEvent) => {
                     field.onBlur();
@@ -1283,9 +1293,9 @@ export const EventDrawer = ({
 
                     field.onChange(formatEditableCurrencyAmount(parsedValue, selectedCurrencyCode));
                   }}
-                  placeholder="0.00"
+                  placeholder={getCurrencyMinorUnit(selectedCurrencyCode) > 0 ? '0.00' : '0'}
                   sx={{ flex: 1.05 }}
-                  type="number"
+                  type="text"
                   value={field.value}
                 />
               )}

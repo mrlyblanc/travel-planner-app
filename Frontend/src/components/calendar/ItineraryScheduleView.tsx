@@ -6,7 +6,8 @@ import type { ItineraryEvent } from '../../types/event';
 
 interface ItineraryScheduleViewProps {
   events: ItineraryEvent[];
-  onSelectEvent: (event: ItineraryEvent) => void;
+  activeEventId?: string | null;
+  onSelectEvent: (event: ItineraryEvent, anchorEl: HTMLElement) => void;
 }
 
 interface ScheduleEventOccurrence {
@@ -15,8 +16,11 @@ interface ScheduleEventOccurrence {
   day: string;
 }
 
+const scheduleDateColumnWidth = { xs: '92px', md: '160px' } as const;
+
 export const ItineraryScheduleView = ({
   events,
+  activeEventId,
   onSelectEvent,
 }: ItineraryScheduleViewProps) => {
   const theme = useTheme();
@@ -32,59 +36,24 @@ export const ItineraryScheduleView = ({
           <Box
             key={group.key}
             sx={{
-              px: { xs: 1.5, sm: 2.2 },
-              py: { xs: 1.4, sm: 1.7 },
+              px: { xs: 1.2, sm: 2.2 },
+              py: { xs: 1.25, sm: 1.7 },
             }}
           >
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={{ xs: 1.2, md: 2.4 }}>
-              <Stack
-                direction="row"
-                spacing={1.4}
-                sx={{
-                  minWidth: { md: 152 },
-                  alignItems: 'flex-start',
-                  flexShrink: 0,
-                  pt: { xs: 1.15, md: 1.35 },
-                }}
-              >
-                {isToday ? (
-                  <Box
-                    sx={{
-                      width: 40,
-                      height: 40,
-                      borderRadius: '50%',
-                      display: 'grid',
-                      placeItems: 'center',
-                      backgroundColor: 'primary.main',
-                      color: '#ffffff',
-                      fontWeight: 700,
-                      fontSize: '1.05rem',
-                      boxShadow: '0 8px 20px rgba(75, 141, 255, 0.28)',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {group.date.format('D')}
-                  </Box>
-                ) : (
-                  <Typography
-                    color="text.primary"
-                    fontSize="1.45rem"
-                    fontWeight={700}
-                    lineHeight={1}
-                    sx={{ minWidth: 28 }}
-                  >
-                    {group.date.format('D')}
-                  </Typography>
-                )}
-                <Box sx={{ pt: 0.15 }}>
-                  <Typography color="primary.main" fontWeight={700} sx={{ letterSpacing: '0.12em' }} variant="caption">
-                    {group.date.format('MMM, ddd').toUpperCase()}
-                  </Typography>
-                </Box>
-              </Stack>
-
-              <Stack spacing={0.9} sx={{ flex: 1 }}>
-                {group.events.length === 0 ? (
+            <Stack spacing={0.9}>
+              {group.events.length === 0 ? (
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: {
+                      xs: `${scheduleDateColumnWidth.xs} minmax(0, 1fr)`,
+                      md: `${scheduleDateColumnWidth.md} minmax(0, 1fr)`,
+                    },
+                    columnGap: { xs: 1, md: 2.4 },
+                    alignItems: 'start',
+                  }}
+                >
+                  <DateCell date={group.date} isToday={isToday} />
                   <Box
                     sx={{
                       px: 1.25,
@@ -95,50 +64,96 @@ export const ItineraryScheduleView = ({
                       No events scheduled today.
                     </Typography>
                   </Box>
-                ) : null}
+                </Box>
+              ) : null}
 
-                {group.events.map((occurrence) => {
-                  const color = occurrence.event.color || getDefaultEventColor(occurrence.event.category);
-                  const textColor = getEventTextColor(color);
+              {group.events.map((occurrence, occurrenceIndex) => {
+                const showDateCell = occurrenceIndex === 0;
+                const selected = occurrence.event.id === activeEventId;
+                const color = occurrence.event.color || getDefaultEventColor(occurrence.event.category);
+                const textColor = getEventTextColor(color);
 
-                  return (
+                return (
+                  <Box
+                    key={`${occurrence.id}-${occurrence.day}`}
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: {
+                        xs: `${scheduleDateColumnWidth.xs} minmax(0, 1fr)`,
+                        md: `${scheduleDateColumnWidth.md} minmax(0, 1fr)`,
+                      },
+                      columnGap: { xs: 1, md: 2.4 },
+                      alignItems: 'start',
+                    }}
+                  >
+                    {showDateCell ? (
+                      <DateCell date={group.date} isToday={isToday} />
+                    ) : (
+                      <Box sx={{ minHeight: 40, alignSelf: 'center' }} />
+                    )}
+
                     <ButtonBase
-                      key={`${occurrence.id}-${occurrence.day}`}
-                      onClick={() => onSelectEvent(occurrence.event)}
+                      onClick={(clickEvent) => onSelectEvent(occurrence.event, clickEvent.currentTarget)}
                       sx={{
                         width: '100%',
                         textAlign: 'left',
                         borderRadius: theme.app.radius.md,
-                        px: 1.25,
-                        py: 1,
+                        px: { xs: 0.9, sm: 1.25 },
+                        py: { xs: 0.85, sm: 1 },
                         justifyContent: 'flex-start',
-                        backgroundColor: 'transparent',
+                        border: `1px solid ${selected ? theme.app.selection.border : 'transparent'}`,
+                        backgroundColor: selected ? theme.app.selection.bg : 'transparent',
+                        boxShadow: selected ? `inset 3px 0 0 ${theme.app.selection.accent}` : 'none',
                         transition: 'background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease',
                         '&:hover': {
-                          backgroundColor: theme.palette.action.hover,
+                          backgroundColor: selected ? theme.app.selection.hoverBg : theme.palette.action.hover,
                           transform: 'translateY(-1px)',
                         },
                       }}
                     >
                       <Stack
                         direction={{ xs: 'column', sm: 'row' }}
-                        spacing={{ xs: 0.55, sm: 1.5 }}
+                        spacing={{ xs: 0.7, sm: 1.5 }}
                         sx={{ width: '100%', alignItems: { sm: 'center' } }}
                       >
-                        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: { sm: 128 } }}>
+                        <Stack
+                          direction="row"
+                          justifyContent={{ xs: 'space-between', sm: 'flex-start' }}
+                          spacing={{ xs: 1.2, sm: 1 }}
+                          sx={{ alignItems: 'center', minWidth: { sm: 128 }, width: { xs: '100%', sm: 'auto' } }}
+                        >
+                          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', minWidth: 0, flex: 1 }}>
+                            <Box
+                              sx={{
+                                width: 11,
+                                height: 11,
+                                borderRadius: '50%',
+                                backgroundColor: color,
+                                boxShadow: `0 0 0 3px ${alpha(color, 0.16)}`,
+                                flexShrink: 0,
+                              }}
+                            />
+                            <Typography color="text.secondary" fontWeight={600} noWrap variant="caption">
+                              {buildOccurrenceLabel(occurrence.event, group.date)}
+                            </Typography>
+                          </Stack>
+
                           <Box
                             sx={{
-                              width: 11,
-                              height: 11,
-                              borderRadius: '50%',
-                              backgroundColor: color,
-                              boxShadow: `0 0 0 3px ${alpha(color, 0.16)}`,
-                              flexShrink: 0,
+                              display: { xs: 'inline-flex', sm: 'none' },
+                              alignSelf: 'center',
+                              px: 1,
+                              py: 0.45,
+                              borderRadius: theme.app.radius.md,
+                              backgroundColor: alpha(color, theme.palette.mode === 'light' ? 0.16 : 0.24),
+                              color: textColor,
+                              maxWidth: '48%',
                             }}
-                          />
-                          <Typography color="text.secondary" fontWeight={600} variant="caption">
-                            {buildOccurrenceLabel(occurrence.event, group.date)}
-                          </Typography>
+                          >
+                            <Typography fontWeight={700} noWrap variant="caption">
+                              {occurrence.event.category}
+                            </Typography>
+                          </Box>
                         </Stack>
 
                         <Box sx={{ minWidth: 0, flex: 1 }}>
@@ -155,6 +170,7 @@ export const ItineraryScheduleView = ({
                         <Box
                           sx={{
                             alignSelf: { xs: 'flex-start', sm: 'center' },
+                            display: { xs: 'none', sm: 'inline-flex' },
                             px: 1,
                             py: 0.45,
                             borderRadius: theme.app.radius.md,
@@ -168,9 +184,9 @@ export const ItineraryScheduleView = ({
                         </Box>
                       </Stack>
                     </ButtonBase>
-                  );
-                })}
-              </Stack>
+                  </Box>
+                );
+              })}
             </Stack>
           </Box>
         );
@@ -178,6 +194,65 @@ export const ItineraryScheduleView = ({
     </Stack>
   );
 };
+
+const DateCell = ({
+  date,
+  isToday,
+}: {
+  date: ReturnType<typeof dayjs>;
+  isToday: boolean;
+}) => (
+  <Box
+    sx={{
+      minWidth: 0,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 1.25,
+      minHeight: 40,
+      width: '100%',
+      alignSelf: 'center',
+    }}
+  >
+    <Typography
+      color={isToday ? '#ffffff' : 'text.primary'}
+      component="span"
+      fontSize="1.1rem"
+      fontWeight={700}
+      lineHeight={1}
+      sx={
+        isToday
+          ? {
+              width: 40,
+              height: 40,
+              borderRadius: '50%',
+              display: 'grid',
+              placeItems: 'center',
+              backgroundColor: 'primary.main',
+              boxShadow: '0 8px 20px rgba(75, 141, 255, 0.28)',
+              flexShrink: 0,
+            }
+          : {
+              width: 40,
+              height: 40,
+              display: 'grid',
+              placeItems: 'center',
+              flexShrink: 0,
+            }
+      }
+    >
+      {date.format('D')}
+    </Typography>
+    <Typography
+      color="primary.main"
+      component="span"
+      fontWeight={700}
+      sx={{ letterSpacing: '0.12em', lineHeight: 1.15 }}
+      variant="caption"
+    >
+      {date.format('MMM, ddd').toUpperCase()}
+    </Typography>
+  </Box>
+);
 
 const buildScheduleGroups = (events: ItineraryEvent[], today: ReturnType<typeof dayjs>) => {
   const groups = new Map<string, ScheduleEventOccurrence[]>();

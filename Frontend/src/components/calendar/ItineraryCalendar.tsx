@@ -3,7 +3,7 @@ import type { DatesSetArg, EventClickArg, EventDropArg, EventInput } from '@full
 import dayGridPlugin from '@fullcalendar/daygrid';
 import FullCalendar from '@fullcalendar/react';
 import timeGridPlugin from '@fullcalendar/timegrid';
-import { Box, Typography } from '@mui/material';
+import { alpha, Box, Typography, useTheme } from '@mui/material';
 import type { RefObject } from 'react';
 import {
   DEFAULT_TIMED_SLOT_MINUTES,
@@ -25,10 +25,11 @@ interface ItineraryCalendarProps {
   events: ItineraryEvent[];
   initialDate: string;
   activeView: FullCalendarView;
+  activeEventId?: string | null;
   canManage: boolean;
   onViewChange: (view: FullCalendarView) => void;
   onRangeChange: (label: string) => void;
-  onSelectEvent: (event: ItineraryEvent) => void;
+  onSelectEvent: (event: ItineraryEvent, anchorEl: HTMLElement) => void;
   onSelectSlot: (selection: { start: string; end: string; allDay: boolean }) => void;
   onReschedule: (eventId: string, start: string, end: string) => void;
 }
@@ -38,6 +39,7 @@ export const ItineraryCalendar = ({
   events,
   initialDate,
   activeView,
+  activeEventId,
   canManage,
   onViewChange,
   onRangeChange,
@@ -45,6 +47,7 @@ export const ItineraryCalendar = ({
   onSelectSlot,
   onReschedule,
 }: ItineraryCalendarProps) => {
+  const theme = useTheme();
   const calendarEvents: EventInput[] = events.map((event) => {
     const fillColor = event.color || getDefaultEventColor(event.category);
     const renderInAllDayRow = shouldRenderInAllDayRow(event);
@@ -77,6 +80,54 @@ export const ItineraryCalendar = ({
         '& .fc-timegrid-slot-label-cushion, & .fc-timegrid-axis-cushion': {
           color: 'text.secondary',
         },
+        '& .fc .tp-calendar-event': {
+          cursor: 'pointer',
+          position: 'relative',
+          overflow: 'hidden',
+          transition: 'transform 150ms ease, box-shadow 150ms ease, opacity 150ms ease',
+          boxShadow: '0 1px 2px rgba(0, 0, 0, 0.08)',
+          '&::after': {
+            content: '""',
+            position: 'absolute',
+            inset: 0,
+            borderRadius: 'inherit',
+            backgroundColor: 'transparent',
+            pointerEvents: 'none',
+            transition: 'background-color 150ms ease, box-shadow 150ms ease',
+          },
+        },
+        '& .fc .tp-calendar-event:hover': {
+          transform: 'translateY(-1px)',
+          boxShadow:
+            theme.palette.mode === 'light'
+              ? '0 10px 20px rgba(24, 50, 77, 0.18)'
+              : '0 10px 20px rgba(0, 0, 0, 0.34)',
+          '&::after': {
+            backgroundColor:
+              theme.palette.mode === 'light' ? alpha(theme.palette.common.white, 0.06) : alpha(theme.palette.common.white, 0.04),
+          },
+        },
+        '& .fc .tp-calendar-event.is-selected': {
+          transform: 'translateY(-1px)',
+          boxShadow:
+            theme.palette.mode === 'light'
+              ? 'inset 0 0 0 1px rgba(255, 255, 255, 0.18), 0 14px 26px rgba(24, 50, 77, 0.24)'
+              : 'inset 0 0 0 1px rgba(255, 255, 255, 0.14), 0 14px 28px rgba(0, 0, 0, 0.4)',
+          '&::after': {
+            backgroundColor:
+              theme.palette.mode === 'light' ? alpha(theme.palette.common.white, 0.12) : alpha(theme.palette.common.white, 0.08),
+          },
+        },
+        '& .fc .tp-calendar-event.is-selected:hover': {
+          boxShadow:
+            theme.palette.mode === 'light'
+              ? 'inset 0 0 0 1px rgba(255, 255, 255, 0.2), 0 16px 30px rgba(24, 50, 77, 0.28)'
+              : 'inset 0 0 0 1px rgba(255, 255, 255, 0.16), 0 16px 30px rgba(0, 0, 0, 0.44)',
+          '&::after': {
+            backgroundColor:
+              theme.palette.mode === 'light' ? alpha(theme.palette.common.white, 0.15) : alpha(theme.palette.common.white, 0.1),
+          },
+        },
       }}
     >
       <FullCalendar
@@ -98,7 +149,13 @@ export const ItineraryCalendar = ({
           });
         }}
         editable={canManage}
-        eventClick={(arg: EventClickArg) => onSelectEvent(arg.event.extendedProps.sourceEvent as ItineraryEvent)}
+        eventClassNames={(arg) => {
+          const sourceEvent = arg.event.extendedProps.sourceEvent as ItineraryEvent;
+          return ['tp-calendar-event', ...(sourceEvent.id === activeEventId ? ['is-selected'] : [])];
+        }}
+        eventClick={(arg: EventClickArg) =>
+          onSelectEvent(arg.event.extendedProps.sourceEvent as ItineraryEvent, arg.el)
+        }
         eventDisplay="block"
         eventContent={(arg) => {
           const sourceEvent = arg.event.extendedProps.sourceEvent as ItineraryEvent;
