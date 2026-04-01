@@ -17,15 +17,16 @@ import {
 import { getDefaultEventColor, getEventTextColor } from '../../lib/events';
 import type { ItineraryEvent } from '../../types/event';
 
-export type CalendarView = 'timeGridDay' | 'timeGridThreeDay' | 'timeGridWeek' | 'dayGridMonth';
+export type CalendarView = 'timeGridDay' | 'timeGridThreeDay' | 'timeGridWeek' | 'dayGridMonth' | 'schedule';
+export type FullCalendarView = Exclude<CalendarView, 'schedule'>;
 
 interface ItineraryCalendarProps {
   calendarRef: RefObject<FullCalendar | null>;
   events: ItineraryEvent[];
   initialDate: string;
-  activeView: CalendarView;
+  activeView: FullCalendarView;
   canManage: boolean;
-  onViewChange: (view: CalendarView) => void;
+  onViewChange: (view: FullCalendarView) => void;
   onRangeChange: (label: string) => void;
   onSelectEvent: (event: ItineraryEvent) => void;
   onSelectSlot: (selection: { start: string; end: string; allDay: boolean }) => void;
@@ -163,7 +164,7 @@ export const ItineraryCalendar = ({
         }
         slotDuration="00:30:00"
         timeZone="local"
-        viewDidMount={(arg) => onViewChange(arg.view.type as CalendarView)}
+        viewDidMount={(arg) => onViewChange(arg.view.type as FullCalendarView)}
         views={{
           timeGridThreeDay: {
             type: 'timeGrid',
@@ -172,7 +173,7 @@ export const ItineraryCalendar = ({
           },
         }}
         datesSet={(arg: DatesSetArg) => {
-          onViewChange(arg.view.type as CalendarView);
+          onViewChange(arg.view.type as FullCalendarView);
           onRangeChange(buildRangeLabel(arg));
         }}
         eventDrop={(arg: EventDropArg) => {

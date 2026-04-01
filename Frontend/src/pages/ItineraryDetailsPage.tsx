@@ -22,18 +22,21 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type
 import { Navigate, useParams } from 'react-router-dom';
 import { useToast } from '../app/providers/ToastProvider';
 import { useTravelStore, type EventInput, type ItineraryInput } from '../app/store/useTravelStore';
-import type { CalendarView } from '../components/calendar/ItineraryCalendar';
+import type { CalendarView, FullCalendarView } from '../components/calendar/ItineraryCalendar';
 import { CostSummaryCard } from '../components/common/CostSummaryCard';
 import { RouteLoadingScreen } from '../components/common/RouteLoadingScreen';
 import { EventListPanel } from '../components/event/EventListPanel';
 import { UserAvatarGroup } from '../components/user/UserAvatarGroup';
 import { ApiError } from '../lib/api';
 import { getCostTotalsByCurrency, getCurrencySummaryDisplay } from '../lib/currency';
-import { dayjs, formatDateRange } from '../lib/date';
+import { dayjs, formatDateRange, formatMonthLabel } from '../lib/date';
 import { getItineraryDuration, getUpcomingEvents, getUserMap } from '../lib/travel';
 
 const ItineraryCalendar = lazy(() =>
   import('../components/calendar/ItineraryCalendar').then((module) => ({ default: module.ItineraryCalendar })),
+);
+const ItineraryScheduleView = lazy(() =>
+  import('../components/calendar/ItineraryScheduleView').then((module) => ({ default: module.ItineraryScheduleView })),
 );
 const EventDrawer = lazy(() =>
   import('../components/event/EventDrawer').then((module) => ({ default: module.EventDrawer })),
@@ -51,6 +54,7 @@ const viewOptions: Array<{ value: CalendarView; label: string }> = [
   { value: 'timeGridThreeDay', label: '3 Days' },
   { value: 'timeGridWeek', label: 'Week' },
   { value: 'dayGridMonth', label: 'Month' },
+  { value: 'schedule', label: 'Schedule' },
 ];
 
 export const ItineraryDetailsPage = () => {
@@ -86,6 +90,7 @@ export const ItineraryDetailsPage = () => {
     [allEvents, itineraryId],
   );
   const [activeView, setActiveView] = useState<CalendarView>('dayGridMonth');
+  const [visibleDate, setVisibleDate] = useState('');
   const [rangeLabel, setRangeLabel] = useState('');
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
@@ -114,6 +119,7 @@ export const ItineraryDetailsPage = () => {
   const collaborators = members.filter((member) => member.id !== currentUserId);
   const selectedEventHistory = selectedEvent ? eventHistory[selectedEvent.id] ?? [] : [];
   const currentItineraryId = itinerary?.id ?? null;
+  const fallbackVisibleDate = itinerary?.startDate ?? dayjs().format('YYYY-MM-DD');
   const latestEventActivityLabel = useMemo(() => {
     const activityTimestamps = [
       itineraryCreatedAt,
@@ -167,6 +173,8 @@ export const ItineraryDetailsPage = () => {
     }
 
     setActiveView('dayGridMonth');
+    setVisibleDate(itinerary.startDate);
+    setRangeLabel(formatMonthLabel(itinerary.startDate));
 
     const calendarApi = calendarRef.current?.getApi();
     if (!calendarApi) {
@@ -176,6 +184,12 @@ export const ItineraryDetailsPage = () => {
     calendarApi.changeView('dayGridMonth');
     calendarApi.gotoDate(itinerary.startDate);
   }, [itinerary]);
+
+  useEffect(() => {
+    if (activeView === 'schedule') {
+      setRangeLabel('All scheduled events');
+    }
+  }, [activeView]);
 
   const handleLoadShareCode = useCallback(async () => {
     if (!isOwner || !currentItineraryId) {
@@ -261,6 +275,49 @@ export const ItineraryDetailsPage = () => {
     setEventDrawerOpen(false);
     setSelectedEventId(null);
     setDraftRange(null);
+  };
+
+  const handleCalendarViewChange = (nextView: CalendarView) => {
+    const calendarApi = calendarRef.current?.getApi();
+    const referenceDate = calendarApi?.getDate() ?? (visibleDate ? dayjs(visibleDate).toDate() : null);
+    const nextVisibleDate = referenceDate ? dayjs(referenceDate).format('YYYY-MM-DD') : fallbackVisibleDate;
+
+    setVisibleDate(nextVisibleDate);
+    setActiveView(nextView);
+
+    if (nextView === 'schedule') {
+      setRangeLabel('All scheduled events');
+      return;
+    }
+
+    if (calendarApi) {
+      calendarApi.changeView(nextView as FullCalendarView);
+      calendarApi.gotoDate(nextVisibleDate);
+    }
+  };
+
+  const handlePrevRange = () => {
+    if (activeView === 'schedule') {
+      return;
+    }
+
+    calendarRef.current?.getApi().prev();
+  };
+
+  const handleNextRange = () => {
+    if (activeView === 'schedule') {
+      return;
+    }
+
+    calendarRef.current?.getApi().next();
+  };
+
+  const handleTodayRange = () => {
+    if (activeView === 'schedule') {
+      return;
+    }
+
+    calendarRef.current?.getApi().today();
   };
 
   const handleDeleteEvent = async (eventId: string) => {
@@ -368,7 +425,7 @@ export const ItineraryDetailsPage = () => {
                   </Typography>
                 </Stack>
                 {collaborators.length > 0 ? (
-                  <UserAvatarGroup max={5} users={collaborators} />
+                <UserAvatarGroup max={5} users={collaborators} />
                 ) : (
                   <Typography color="text.secondary" variant="body2">
                     Just you on this itinerary for now
@@ -410,15 +467,15 @@ export const ItineraryDetailsPage = () => {
           >
             <Stack direction="row" spacing={1}>
               <Tooltip title="Previous range">
-                <CalendarNavButton aria-label="Previous range" onClick={() => calendarRef.current?.getApi().prev()}>
+                <CalendarNavButton aria-label="Previous range" disabled={activeView === 'schedule'} onClick={handlePrevRange}>
                   <ArrowLeft size={18} />
                 </CalendarNavButton>
               </Tooltip>
-              <CalendarTodayButton onClick={() => calendarRef.current?.getApi().today()} variant="outlined">
+              <CalendarTodayButton disabled={activeView === 'schedule'} onClick={handleTodayRange} variant="outlined">
                 Today
               </CalendarTodayButton>
               <Tooltip title="Next range">
-                <CalendarNavButton aria-label="Next range" onClick={() => calendarRef.current?.getApi().next()}>
+                <CalendarNavButton aria-label="Next range" disabled={activeView === 'schedule'} onClick={handleNextRange}>
                   <ArrowRight size={18} />
                 </CalendarNavButton>
               </Tooltip>
@@ -431,9 +488,7 @@ export const ItineraryDetailsPage = () => {
             <ViewSelectControl size="small">
               <Select
                 onChange={(event) => {
-                  const value = event.target.value as CalendarView;
-                  setActiveView(value);
-                  calendarRef.current?.getApi().changeView(value);
+                  handleCalendarViewChange(event.target.value as CalendarView);
                 }}
                 sx={{ borderRadius: 'inherit' }}
                 value={activeView}
@@ -454,25 +509,43 @@ export const ItineraryDetailsPage = () => {
           <Card>
             <CalendarCardContent>
               <Suspense fallback={<CalendarSectionFallback />}>
-                <ItineraryCalendar
-                  activeView={activeView}
-                  calendarRef={calendarRef}
-                  canManage={canManage}
-                  events={events}
-                  initialDate={itinerary.startDate}
-                  onRangeChange={setRangeLabel}
-                  onReschedule={(eventId, start, end) => {
-                    void rescheduleEvent(eventId, start, end).then(() => showToast('Event rescheduled'));
-                  }}
-                  onSelectEvent={(event) => {
-                    setSelectedEventId(event.id);
-                    setDraftRange(null);
-                    setEventDrawerOpen(true);
-                    void loadEventHistory(event.id);
-                  }}
-                  onSelectSlot={(selection) => openCreateEvent(selection)}
-                  onViewChange={setActiveView}
-                />
+                {activeView === 'schedule' ? (
+                  <ItineraryScheduleView
+                    events={events}
+                    onSelectEvent={(event) => {
+                      setSelectedEventId(event.id);
+                      setDraftRange(null);
+                      setEventDrawerOpen(true);
+                      void loadEventHistory(event.id);
+                    }}
+                  />
+                ) : (
+                  <ItineraryCalendar
+                    activeView={activeView as FullCalendarView}
+                    calendarRef={calendarRef}
+                    canManage={canManage}
+                    events={events}
+                    initialDate={visibleDate || itinerary.startDate}
+                    onRangeChange={setRangeLabel}
+                    onReschedule={(eventId, start, end) => {
+                      void rescheduleEvent(eventId, start, end).then(() => showToast('Event rescheduled'));
+                    }}
+                    onSelectEvent={(event) => {
+                      setSelectedEventId(event.id);
+                      setDraftRange(null);
+                      setEventDrawerOpen(true);
+                      void loadEventHistory(event.id);
+                    }}
+                    onSelectSlot={(selection) => openCreateEvent(selection)}
+                    onViewChange={(view) => {
+                      setActiveView(view);
+                      const currentDate = calendarRef.current?.getApi().getDate();
+                      if (currentDate) {
+                        setVisibleDate(dayjs(currentDate).format('YYYY-MM-DD'));
+                      }
+                    }}
+                  />
+                )}
               </Suspense>
             </CalendarCardContent>
           </Card>
@@ -555,6 +628,7 @@ export const ItineraryDetailsPage = () => {
           />
         ) : null}
       </Suspense>
+
     </Stack>
   );
 };
